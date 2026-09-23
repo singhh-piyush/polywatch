@@ -92,4 +92,6 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "discover":
         asyncio.run(discover(cfg, limit=args.limit, show_excluded=args.show_excluded, top=args.top))
         return
-    parser.print_help()
+    from .tui.app import PolywatchApp
+
+    PolywatchApp(cfg).run()

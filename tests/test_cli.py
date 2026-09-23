@@ -44,3 +44,21 @@ def test_main_dispatches_discover(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "discover", fake_discover)
     cli.main(["discover", "--limit", "5", "--show-excluded"])
     assert calls == [{"limit": 5, "show_excluded": True, "top": 50}]
+
+
+def test_main_without_command_launches_the_tui(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(cli, "setup_logging", lambda path: None)
+    launched = []
+
+    class FakeApp:
+        def __init__(self, cfg):
+            launched.append(cfg)
+
+        def run(self):
+            launched.append("ran")
+
+    import polywatch.tui.app
+    monkeypatch.setattr(polywatch.tui.app, "PolywatchApp", FakeApp)
+    cli.main([])
+    assert launched[-1] == "ran"
