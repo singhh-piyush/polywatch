@@ -25,7 +25,15 @@ async def test_first_poll_backfills_then_uses_the_cursor():
     assert [t.tx_hash for t in trades] == ["t1", "t2"]  # oldest first
     assert data.calls == [("0xa", NOW - 3600)]
     await poller.poll(["0xa"], NOW + 20)
-    assert data.calls[-1] == ("0xa", NOW - 120)
+    assert data.calls[-1] == ("0xa", NOW - 50 - 120)  # newest trade seen, minus the overlap
+
+
+async def test_cursor_ignores_the_local_clock():
+    data = FakeActivity({"0xa": [], "0xb": [trade_row(NOW - 50, wallet="0xb")]})
+    poller = ActivityPoller(data, backfill_s=3600, overlap_s=600)
+    await poller.poll(["0xa", "0xb"], NOW)
+    await poller.poll(["0xa", "0xb"], NOW + 3 * 3600)  # a fast local clock can't skip trades
+    assert data.calls[-2:] == [("0xa", NOW - 3600), ("0xb", NOW - 50 - 600)]
 
 
 async def test_failed_wallet_keeps_no_cursor_and_backfills_again():
@@ -75,3 +83,17 @@ async def test_poll_once_forwards_polled_trades():
     service.set_watched({"0xa"})
     await service.poll_once()
     assert len(seen) == 1 and seen[0].wallet == "0xa"
+
+
+async def test_stream_skips_fills_without_market_details():
+    seen = []
+
+    async def fake_stream(on_status):
+        yield trade(NOW, wallet="0xa", slug="")  # the websocket sometimes omits title, slug and outcome
+        yield trade(NOW + 1, wallet="0xa")
+
+    service = FeedService(FakeActivity({}), Settings(), on_trade=seen.append, on_status=lambda s: None,
+                          stream=fake_stream)
+    service.set_watched({"0xa"})
+    await service.run_stream()
+    assert [t.ts for t in seen] == [NOW + 1]

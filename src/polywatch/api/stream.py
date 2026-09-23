@@ -43,7 +43,7 @@ async def _keepalive(ws: ClientConnection, interval: float) -> None:
 
 
 async def stream_trades(url: str = RTDS_URL, *, on_status: Callable[[str], None] | None = None,
-                        ping_interval: float = 5.0, min_backoff: float = 1.0,
+                        ping_interval: float = 5.0, idle_timeout: float = 30.0, min_backoff: float = 1.0,
                         max_backoff: float = 30.0) -> AsyncIterator[Trade]:
     status = on_status or (lambda _s: None)
     backoff = min_backoff
@@ -55,13 +55,21 @@ async def stream_trades(url: str = RTDS_URL, *, on_status: Callable[[str], None]
                 status("live")
                 backoff = min_backoff
                 keepalive = asyncio.create_task(_keepalive(ws, ping_interval))
+                loop = asyncio.get_running_loop()
+                # The site trades dozens of times a second, so a connection with no trades for idle_timeout is dead,
+                # even if it still answers keepalives.
+                deadline = loop.time() + idle_timeout
                 try:
-                    async for raw in ws:
+                    while True:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=max(deadline - loop.time(), 0.0))
                         trade = parse_message(raw)
                         if trade is not None:
+                            deadline = loop.time() + idle_timeout
                             yield trade
                 finally:
                     keepalive.cancel()
+        except TimeoutError:
+            log.warning("no trades on the stream for %.0fs; reconnecting", idle_timeout)
         except Exception as exc:
             log.warning("trade stream disconnected: %s", exc)
         status("reconnecting")

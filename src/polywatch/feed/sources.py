@@ -21,7 +21,7 @@ class ActivityPoller:
     without this. It also serves as the startup backfill and fills the gap after a reconnect.
     """
 
-    def __init__(self, data: Any, *, backfill_s: int, overlap_s: int = 120, concurrency: int = 8) -> None:
+    def __init__(self, data: Any, *, backfill_s: int, overlap_s: int = 600, concurrency: int = 8) -> None:
         self.data = data
         self.backfill_s = backfill_s
         self.overlap_s = overlap_s
@@ -32,9 +32,12 @@ class ActivityPoller:
         start = self.cursor.get(wallet, now - self.backfill_s)
         async with self._semaphore:
             rows = await self.data.activity(wallet, type_="TRADE", start=start)
-        # Re-read a small overlap next time: /activity can lag, and the aggregator drops duplicates.
-        self.cursor[wallet] = now - self.overlap_s
-        return [t for t in map(Trade.from_api, rows) if t is not None]
+        trades = [t for t in map(Trade.from_api, rows) if t is not None]
+        # Next time, start a little before the newest trade seen, by the server's clock: /activity can lag, the local
+        # clock can drift, and the aggregator drops the duplicates the overlap brings back.
+        newest = max((t.ts for t in trades), default=None)
+        self.cursor[wallet] = start if newest is None else max(start, newest - self.overlap_s)
+        return trades
 
     async def poll(self, wallets: list[str], now: int) -> list[Trade]:
         results = await asyncio.gather(*(self._poll_wallet(w, now) for w in wallets), return_exceptions=True)
@@ -72,7 +75,8 @@ class FeedService:
     async def run_stream(self) -> None:
         async for trade in self.stream(on_status=self.on_status):
             self.trades_seen += 1
-            if trade.wallet in self.watched:
+            # Some websocket fills come without market details; the poller delivers them complete within seconds.
+            if trade.wallet in self.watched and trade.slug:
                 self._deliver(trade)
 
     async def poll_once(self) -> None:

@@ -143,3 +143,15 @@ async def test_add_trader_by_wallet_pins_it():
         await pilot.pause()
         assert app.store.overrides()[WALLET] == "pin" and WALLET in app.watched
         assert WALLET in app.query_one(TradersTable).row_wallets()
+
+
+async def test_alerts_only_for_bets_that_are_still_recent():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        now = int(time.time())
+        # e.g. a rescan hours into a session adds a trader, and the poller backfills their last 24 h
+        app.handle_trade(trade(now - 3600, wallet="0xaaa", price=0.58, size=5000, asset="old"))
+        app.handle_trade(trade(now - 30, wallet="0xaaa", price=0.58, size=5000, asset="new"))
+        await pilot.pause()
+        assert [url for _, _, url in app.notifier.sent] == ["https://polymarket.com/event/some-event/some-market"]
+        assert len(app.query_one(FeedList).rows) == 2

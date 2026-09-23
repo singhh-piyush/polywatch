@@ -17,8 +17,8 @@ class Aggregator:
         self.cfg = cfg
         self.watched = watched or {}
         self._groups: dict[tuple[str, str, str], list[FeedItem]] = defaultdict(list)
-        self._seen: set[tuple[str, str, str, str, float]] = set()
-        self._seen_order: deque[tuple[str, str, str, str, float]] = deque()
+        self._seen: set[tuple[str, str, str, str, float, float]] = set()
+        self._seen_order: deque[tuple[str, str, str, str, float, float]] = deque()
         self._max_seen = max_seen
 
     def set_watched(self, watched: dict[str, WatchedTrader]) -> None:
@@ -38,10 +38,11 @@ class Aggregator:
         item.last_ts = max(item.last_ts, trade.ts)
         if trade.tx_hash and trade.tx_hash not in item.tx_hashes:
             item.tx_hashes.append(trade.tx_hash)
-        item.conviction = item.usd / trader.median_bet if trader.median_bet > 0 else None
+        # Conviction is about new money going in; a big exit is not a bet.
+        item.conviction = item.usd / trader.median_bet if trade.side == "BUY" and trader.median_bet > 0 else None
         return item if item.usd >= self.cfg.feed_min_usd else None
 
-    def _first_sighting(self, key: tuple[str, str, str, str, float]) -> bool:
+    def _first_sighting(self, key: tuple[str, str, str, str, float, float]) -> bool:
         if key in self._seen:
             return False
         self._seen.add(key)

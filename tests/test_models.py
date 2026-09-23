@@ -33,7 +33,15 @@ def test_trade_usd_and_dedupe_key():
     t = Trade.from_api({"proxyWallet": "0xab", "side": "BUY", "price": 0.25, "size": 8, "timestamp": 1,
                         "transactionHash": "0xtx", "asset": "a"})
     assert t.usd == 2.0
-    assert t.dedupe_key == ("0xab", "0xtx", "a", "BUY", 8.0)
+    assert t.dedupe_key == ("0xab", "0xtx", "a", "BUY", 8.0, 0.25)
+
+
+def test_fills_at_different_prices_in_one_transaction_are_distinct():
+    row = {"proxyWallet": "0xab", "side": "BUY", "size": 8, "timestamp": 1, "transactionHash": "0xtx", "asset": "a"}
+    first = Trade.from_api(dict(row, price=0.33))
+    same = Trade.from_api(dict(row, price=0.3300000158))  # the websocket's float noise
+    other = Trade.from_api(dict(row, price=0.34))
+    assert first.dedupe_key == same.dedupe_key != other.dedupe_key
 
 
 def test_verdict_eligibility():

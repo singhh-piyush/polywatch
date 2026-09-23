@@ -72,3 +72,29 @@ async def test_stream_sends_text_keepalive():
         await stream.aclose()
 
     assert pinged.is_set() and trade is not None
+
+
+async def test_connection_without_trades_is_replaced():
+    connections = 0
+
+    async def handler(ws):
+        nonlocal connections
+        connections += 1
+        await ws.recv()
+        if connections == 1:
+            async for msg in ws:  # alive (answers keepalives) but no trades
+                if msg == "PING":
+                    await ws.send("PONG")
+        else:
+            await ws.send(message())
+            await ws.wait_closed()
+
+    statuses = []
+    async with serve(handler, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        stream = stream_trades(f"ws://127.0.0.1:{port}", on_status=statuses.append, idle_timeout=0.2,
+                               ping_interval=0.05, min_backoff=0.01)
+        trade = await asyncio.wait_for(anext(stream), timeout=5)
+        await stream.aclose()
+
+    assert trade is not None and connections == 2 and "reconnecting" in statuses

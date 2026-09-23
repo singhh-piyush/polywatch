@@ -32,6 +32,8 @@ from .feed import FeedList, FeedRow
 from .traders import TradersTable
 
 STATUS_DOT = {"live": "[green]●[/]", "connecting": "[yellow]●[/]", "reconnecting": "[yellow]●[/]"}
+# Alerts are for bets you can still act on. Backfills and newly watched traders bring in older ones.
+ALERT_MAX_AGE_S = 180
 
 
 class PolywatchApp(App):
@@ -79,7 +81,6 @@ class PolywatchApp(App):
         self.prices: dict[str, float] = {}
         self.show_flagged = True
         self.stream_status = "offline"
-        self.started_ts = int(time.time())
         self._rate_mark = (time.monotonic(), 0)
 
     def compose(self) -> ComposeResult:
@@ -243,7 +244,7 @@ class PolywatchApp(App):
             return
         self.query_one(FeedList).upsert(item, trader, self.prices.get(item.asset), self.cfg.conviction_multiple)
         self.store.save_feed_item(item)
-        fresh = item.last_ts >= self.started_ts - 60  # never alert on backfilled history
+        fresh = item.last_ts >= time.time() - ALERT_MAX_AGE_S
         if fresh and not item.notified and is_alert_worthy(item, trader, self.cfg):
             item.notified = True
             title, body = alert_text(item, trader, self.cfg.conviction_multiple)

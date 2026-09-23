@@ -80,3 +80,8 @@ def test_is_alert_worthy():
     item.conviction = 2.9
     assert not is_alert_worthy(item, watched(), CFG)
     assert is_alert_worthy(item, watched(pinned=True), CFG)
+
+
+def test_sells_are_not_conviction_bets():
+    item = agg(median_bet=100.0).add(trade(NOW, size=2000, price=0.5, side="SELL"))  # $1,000 exit
+    assert item.conviction is None and not is_alert_worthy(item, watched(), CFG)

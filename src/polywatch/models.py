@@ -94,8 +94,9 @@ class Trade:
         return self.price * self.size
 
     @property
-    def dedupe_key(self) -> tuple[str, str, str, str, float]:
-        return (self.wallet, self.tx_hash, self.asset, self.side, round(self.size, 4))
+    def dedupe_key(self) -> tuple[str, str, str, str, float, float]:
+        # One transaction can hold several fills of the same size at different prices.
+        return (self.wallet, self.tx_hash, self.asset, self.side, round(self.size, 4), round(self.price, 4))
 
     @classmethod
     def from_api(cls, d: dict[str, Any]) -> Trade | None:
