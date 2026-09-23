@@ -91,7 +91,9 @@ class Scanner:
         names = self.store.override_names()
         pins = {w for w, mode in overrides.items() if mode == "pin"}
         pool = await self.candidates(pins, limit)
-        scan_id = self.store.start_scan(self.clock())
+        # A limited scan (discover --limit) is a quick look, not a ranking for the app to load.
+        save = limit is None
+        scan_id = self.store.start_scan(self.clock()) if save else 0
         semaphore = asyncio.Semaphore(self.cfg.scan_concurrency)
         results: list[tuple[TraderStats, Verdict]] = []
 
@@ -103,12 +105,17 @@ class Scanner:
                     log.warning("scan failed for %s: %s", wallet, exc)
                     stats = TraderStats(wallet=wallet, username=(lb.username if lb else names.get(wallet, "")))
                     verdict = Verdict(excluded=f"error: {exc}")
-            self.store.save_trader(scan_id, stats, verdict)
+            if save:
+                try:
+                    self.store.save_trader(scan_id, stats, verdict)
+                except Exception:
+                    log.exception("could not save %s", wallet)
             results.append((stats, verdict))
             if on_progress is not None:
                 on_progress(ScanProgress(done=len(results), total=len(pool), stats=stats, verdict=verdict))
 
         await asyncio.gather(*(scan_one(w, lb) for w, lb in pool.items()))
         ranked = rank_traders(results, self.cfg)
-        self.store.finish_scan(scan_id, ranked, candidates=len(pool), now=self.clock())
+        if save:
+            self.store.finish_scan(scan_id, ranked, candidates=len(pool), now=self.clock())
         return ranked

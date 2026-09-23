@@ -38,8 +38,8 @@ def closed_row(asset: str, pnl: float, *, avg_price: float = 0.5, bought: float 
                cur_price: float | None = None) -> dict[str, Any]:
     return {
         "asset": asset, "avgPrice": avg_price, "totalBought": bought, "realizedPnl": pnl,
-        "curPrice": (1 if pnl > 0 else 0) if cur_price is None else cur_price, "timestamp": ts, "slug": slug, "eventSlug": slug,
-        "title": slug, "outcome": "Yes",
+        "curPrice": (1 if pnl > 0 else 0) if cur_price is None else cur_price,
+        "timestamp": ts, "slug": slug, "eventSlug": slug, "title": slug, "outcome": "Yes",
     }
 
 

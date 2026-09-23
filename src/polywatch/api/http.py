@@ -67,10 +67,14 @@ class Http:
                 err = exc
             else:
                 if resp.status_code < 400:
-                    return resp.json()
-                if resp.status_code not in RETRYABLE:
+                    try:
+                        return resp.json()
+                    except ValueError:  # an overload or proxy page instead of JSON
+                        err = ApiError(f"GET {url} -> {resp.status_code} with a non-JSON body: {resp.text[:100]}")
+                elif resp.status_code not in RETRYABLE:
                     raise ApiError(f"GET {url} {params} -> {resp.status_code}: {resp.text[:200]}")
-                err = ApiError(f"GET {url} -> {resp.status_code}")
+                else:
+                    err = ApiError(f"GET {url} -> {resp.status_code}")
             if attempt < self.max_tries:
                 delay = self.backoff * 2 ** (attempt - 1) * (1 + random.random())
                 log.debug("retrying %s in %.2fs: %s", url, delay, err)

@@ -1,6 +1,8 @@
 from rich.console import Console
 
 from polywatch import cli
+from polywatch.config import Settings
+from polywatch.discovery.pipeline import ScanProgress
 from polywatch.models import RankedTrader, Verdict
 from tests.factories import stats
 
@@ -62,3 +64,23 @@ def test_main_without_command_launches_the_tui(monkeypatch, tmp_path):
     monkeypatch.setattr(polywatch.tui.app, "PolywatchApp", FakeApp)
     cli.main([])
     assert launched[-1] == "ran"
+
+
+async def test_discover_reports_the_scan_it_just_ran(tmp_path, monkeypatch):
+    class FakeScanner:
+        def __init__(self, *args):
+            pass
+
+        async def run(self, *, limit, on_progress):
+            excluded = RankedTrader(stats(wallet="0xbot", username="bot"),
+                                    Verdict(excluded="bot: 30,000 markets traded"))
+            ranked = RankedTrader(stats(), Verdict(), score=90, rank=1)
+            for t in (excluded, ranked):
+                on_progress(ScanProgress(done=1, total=2, stats=t.stats, verdict=t.verdict))
+            return [ranked]
+
+    monkeypatch.setattr(cli, "Scanner", FakeScanner)
+    console = Console(record=True, width=200)
+    await cli.discover(Settings(db_path=tmp_path / "db.sqlite"), limit=2, show_excluded=True, top=5, console=console)
+    out = console.export_text()
+    assert "1 ranked, 1 excluded (bot 1)" in out and "30,000 markets traded" in out

@@ -55,3 +55,12 @@ async def test_rate_limiter_spaces_out_bursts():
     for _ in range(10):
         await limiter.acquire()
     assert time.monotonic() - start >= 0.4
+
+
+async def test_retries_a_body_that_is_not_json(respx_mock):
+    route = respx_mock.get(f"{BASE}/x").mock(side_effect=[httpx.Response(200, text="<html>busy</html>"),
+                                                         httpx.Response(200, json=[1])])
+    http = Http(max_tries=2, backoff=0)
+    assert await http.get_json(BASE, "/x") == [1]
+    assert route.call_count == 2
+    await http.aclose()

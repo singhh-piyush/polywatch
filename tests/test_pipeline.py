@@ -117,3 +117,24 @@ async def test_candidates_merge_leaderboards_and_add_pins():
     assert list(pool) == ["0xa", "0xb", "0xc", "0xpin"] and pool["0xpin"] is None
     limited = await scanner.candidates({"0xpin"}, limit=2)
     assert list(limited) == ["0xa", "0xb", "0xpin"]
+
+
+async def test_limited_scan_is_not_saved_as_the_latest_ranking():
+    store = Store(":memory:")
+    scanner = Scanner(build(), FakeGamma(), store, PINNED, clock=lambda: NOW)
+    progress = []
+    ranked = await scanner.run(limit=2, on_progress=progress.append)
+    assert [t.stats.wallet for t in ranked] == ["0xsharp", "0xhidden"] and len(progress) == 2
+    assert store.latest_scan() is None
+
+
+async def test_a_failed_save_does_not_abort_the_scan():
+    class FlakyStore(Store):
+        def save_trader(self, scan_id, stats, verdict):
+            if stats.wallet == "0xhidden":
+                raise RuntimeError("database is locked")
+            super().save_trader(scan_id, stats, verdict)
+
+    scanner = Scanner(build(), FakeGamma(), FlakyStore(":memory:"), PINNED, clock=lambda: NOW)
+    ranked = await scanner.run()
+    assert [t.stats.wallet for t in ranked] == ["0xsharp", "0xhidden"]

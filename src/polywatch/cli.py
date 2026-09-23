@@ -59,14 +59,14 @@ async def discover(cfg: Settings, *, limit: int | None, show_excluded: bool, top
     http = Http()
     store = Store(cfg.db_path)
     scanner = Scanner(DataApi(http), GammaApi(http), store, cfg)
+    traders: list[RankedTrader] = []
     try:
         with console.status("Fetching leaderboards…") as status:
             def progress(p: ScanProgress) -> None:
                 status.update(f"Scanning traders {p.done}/{p.total}")
+                traders.append(RankedTrader(p.stats, p.verdict))
 
             ranked = await scanner.run(limit=limit, on_progress=progress)
-        scan = store.latest_scan()
-        traders = store.load_scan(scan[0]) if scan else []
     finally:
         await http.aclose()
         store.close()
