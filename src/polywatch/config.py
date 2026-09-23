@@ -39,6 +39,8 @@ class Settings:
     mm_max_margin: float = 0.02
     max_rebate_rate: float = 0.005  # maker rebates as a share of the amount staked
     max_short_share: float = 0.50
+    max_fast_share: float = 0.50  # recent buys a person could not copy by hand (see snipe_price, flip_window_s)
+    max_void_share: float = 0.50  # resolved bets on voided (50/50) markets
     # flag thresholds (kept, badged, not auto-watched)
     flag_top_share: float = 0.40
     flag_account_age_d: float = 60
@@ -47,7 +49,13 @@ class Settings:
     flag_mm_margin: float = 0.04
     flag_min_roi: float = 0.02
     flag_min_roi_bets: int = 200
+    flag_fast_share: float = 0.25
     quiet_gap_min_trades: int = 200
+    # copyability: a recent buy is too fast to copy when it is at snipe_price or more, is sold again within
+    # flip_window_s, or has the other outcome bought within flip_window_s
+    snipe_price: float = 0.95
+    flip_window_s: int = 600
+    fast_min_buys: int = 20
     # composite score
     shrink_k: int = 10
     w_edge: float = 0.35

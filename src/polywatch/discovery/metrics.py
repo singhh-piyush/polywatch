@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import statistics
+from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
 from ..markets import is_excluded_market
 from ..models import ResolvedBet
+
+# A market that is cancelled or can't be settled (a retirement, a forfeit) resolves 50/50: every outcome pays 50¢.
+VOID_PRICE = 0.5
 
 
 def _f(row: dict[str, Any], key: str) -> float:
@@ -34,7 +38,7 @@ def _bet(row: dict[str, Any], pnl: float, ts: int) -> ResolvedBet | None:
     if avg <= 0 or bought <= 0:
         return None
     return ResolvedBet(asset=str(row.get("asset") or ""), slug=str(row.get("slug") or ""), avg_price=avg,
-                       cost=avg * bought, pnl=pnl, resolved_ts=ts)
+                       cost=avg * bought, pnl=pnl, resolved_ts=ts, voided=_f(row, "curPrice") == VOID_PRICE)
 
 
 def resolved_bets(closed: list[dict[str, Any]], positions: list[dict[str, Any]], since_ts: int) -> list[ResolvedBet]:
@@ -61,10 +65,14 @@ def resolved_bets(closed: list[dict[str, Any]], positions: list[dict[str, Any]],
 
 
 def bet_fields(bets: list[ResolvedBet], shrink_k: int) -> dict[str, Any]:
+    """Scoring fields. Voided bets are left out: they pay back 50¢ whatever was predicted."""
+    all_bets = bets
+    bets = [b for b in all_bets if not b.voided]
+    void_share = (len(all_bets) - len(bets)) / len(all_bets) if all_bets else 0.0
     n = len(bets)
     if n == 0:
         return {"n": 0, "wins": 0, "win_rate": 0.0, "mean_price": 0.0, "edge": 0.0, "roi": 0.0, "pnl": 0.0,
-                "staked": 0.0, "top_share": 0.0, "median_bet": 0.0}
+                "staked": 0.0, "top_share": 0.0, "median_bet": 0.0, "void_share": void_share}
     wins = sum(1 for b in bets if b.pnl > 0)
     pnl = sum(b.pnl for b in bets)
     cost = sum(b.cost for b in bets)
@@ -82,6 +90,7 @@ def bet_fields(bets: list[ResolvedBet], shrink_k: int) -> dict[str, Any]:
         "staked": cost,
         "top_share": max(b.pnl for b in bets) / pnl if pnl > 0 else 0.0,
         "median_bet": statistics.median(b.cost for b in bets),
+        "void_share": void_share,
     }
 
 
@@ -93,6 +102,35 @@ def activity_fields(trade_rows: list[dict[str, Any]], min_trades_for_gap: int) -
         "short_share": short / len(trade_rows) if trade_rows else 0.0,
         "quiet_gap_h": longest_quiet_gap(stamps) if len(stamps) >= min_trades_for_gap else None,
     }
+
+
+def fast_share(trade_rows: list[dict[str, Any]], *, snipe_price: float, flip_s: int, min_buys: int) -> float | None:
+    """Share of recent buys that a person copying by hand could not follow, or None with under min_buys buys.
+
+    Counted: buys at snipe_price or more (the outcome is all but settled, leaving a few cents), buys sold again within
+    flip_s (scalps, and snipes on news like a retirement), and buys with the other outcome of the same market bought
+    within flip_s (arbitrage). A high win rate on its own is not counted: a patient favourite-backer is copyable.
+    """
+    buys = [r for r in trade_rows if r.get("side") == "BUY"]
+    if len(buys) < max(min_buys, 1):
+        return None
+    sells: dict[str, list[int]] = defaultdict(list)
+    market_buys: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for r in trade_rows:
+        ts, asset = int(_f(r, "timestamp")), str(r.get("asset") or "")
+        if r.get("side") == "SELL":
+            sells[asset].append(ts)
+        else:
+            market_buys[str(r.get("conditionId") or "")].append((ts, asset))
+
+    def too_fast(buy: dict[str, Any]) -> bool:
+        ts, asset = int(_f(buy, "timestamp")), str(buy.get("asset") or "")
+        return (_f(buy, "price") >= snipe_price
+                or any(0 <= sold - ts <= flip_s for sold in sells[asset])
+                or any(other != asset and abs(t - ts) <= flip_s
+                       for t, other in market_buys[str(buy.get("conditionId") or "")]))
+
+    return sum(1 for b in buys if too_fast(b)) / len(buys)
 
 
 def rebate_total(rows: list[dict[str, Any]]) -> float:

@@ -14,7 +14,7 @@ from ..config import Settings
 from ..models import LeaderboardEntry, RankedTrader, TraderStats, Verdict
 from ..store import Store
 from .filters import early_exclusion, evaluate
-from .metrics import activity_fields, bet_fields, rebate_total, resolved_bets
+from .metrics import activity_fields, bet_fields, fast_share, rebate_total, resolved_bets
 from .scoring import rank_traders
 
 log = logging.getLogger(__name__)
@@ -63,6 +63,8 @@ class Scanner:
             lb_volume=lb.volume if lb else 0.0,
             markets_traded=markets_traded,
             **activity_fields(trade_rows, cfg.quiet_gap_min_trades),
+            fast_share=fast_share(trade_rows, snipe_price=cfg.snipe_price, flip_s=cfg.flip_window_s,
+                                  min_buys=cfg.fast_min_buys),
         )
         if reason := early_exclusion(stats, now, cfg):
             return stats, Verdict(excluded=reason)

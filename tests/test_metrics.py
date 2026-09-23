@@ -1,7 +1,7 @@
 import pytest
 
-from polywatch.discovery.metrics import (activity_fields, bet_fields, longest_quiet_gap, parse_ts, rebate_total,
-                                         resolved_bets)
+from polywatch.discovery.metrics import (activity_fields, bet_fields, fast_share, longest_quiet_gap, parse_ts,
+                                         rebate_total, resolved_bets)
 from polywatch.models import ResolvedBet
 from tests.factories import DAY, NOW, closed_row, load_fixture, position_row, trade_row
 
@@ -75,8 +75,61 @@ def test_shrinkage_pulls_small_samples_toward_zero():
 
 def test_bet_fields_for_no_bets_or_losses():
     assert bet_fields([], 10) == {"n": 0, "wins": 0, "win_rate": 0.0, "mean_price": 0.0, "edge": 0.0, "roi": 0.0,
-                                  "pnl": 0.0, "staked": 0.0, "top_share": 0.0, "median_bet": 0.0}
+                                  "pnl": 0.0, "staked": 0.0, "top_share": 0.0, "median_bet": 0.0, "void_share": 0.0}
     assert bet_fields([ResolvedBet("a", "m", 0.5, 10.0, -10.0, NOW)], 10)["top_share"] == 0.0
+
+
+def test_voided_markets_are_marked():
+    closed = [closed_row("void", 1.0, avg_price=0.49, cur_price=0.5), closed_row("won", 50.0)]
+    positions = [position_row("void-unredeemed", avg_price=0.6, cur_price=0.5)]
+    voided = {b.asset: b.voided for b in resolved_bets(closed, positions, SINCE)}
+    assert voided == {"void": True, "won": False, "void-unredeemed": True}
+
+
+def test_voided_bets_are_left_out_of_scoring():
+    real = [ResolvedBet(f"a{i}", "m", 0.4, 100.0, 150.0 if i < 12 else -100.0, NOW) for i in range(20)]
+    voids = [ResolvedBet(f"v{i}", "m", 0.49, 100.0, 2.0, NOW, voided=True) for i in range(5)]
+    f = bet_fields(real + voids, shrink_k=10)
+    assert f["n"] == 20 and f["wins"] == 12 and f["mean_price"] == pytest.approx(0.4)
+    assert f["pnl"] == pytest.approx(12 * 150.0 - 8 * 100.0)
+    assert f["void_share"] == pytest.approx(0.2)
+    only_voids = bet_fields(voids, 10)
+    assert only_voids["n"] == 0 and only_voids["void_share"] == 1.0
+
+
+def fast(rows, min_buys=4):
+    return fast_share(rows, snipe_price=0.95, flip_s=600, min_buys=min_buys)
+
+
+def test_fast_share_counts_snipes_flips_and_both_side_buys():
+    rows = [
+        trade_row(NOW, price=0.97, asset="snipe", condition="m1"),
+        trade_row(NOW, price=0.02, asset="flip", condition="m2"),
+        trade_row(NOW + 120, side="SELL", price=0.96, asset="flip", condition="m2"),
+        trade_row(NOW, price=0.49, asset="yes", condition="m3"),
+        trade_row(NOW + 5, price=0.49, asset="no", condition="m3"),
+        trade_row(NOW, price=0.40, asset="held", condition="m4"),
+        trade_row(NOW, price=0.03, asset="longshot", condition="m5"),
+        trade_row(NOW + 3600, side="SELL", price=0.60, asset="held", condition="m4"),
+    ]
+    assert fast(rows) == pytest.approx(4 / 6)  # snipe, flip, yes, no; not held (sold an hour later) or longshot
+
+
+def test_fast_share_boundaries():
+    rows = [trade_row(NOW, price=0.94, asset="a", condition="m1"),
+            trade_row(NOW + 601, side="SELL", asset="a", condition="m1"),
+            trade_row(NOW, asset="b", condition="m2"),
+            trade_row(NOW - 60, side="SELL", asset="b", condition="m2"),  # sold before this buy
+            trade_row(NOW, asset="c", condition="m3"),
+            trade_row(NOW + 601, asset="d", condition="m3"),  # other side, but 10 min later
+            trade_row(NOW, price=0.95, asset="e", condition="m4")]
+    assert fast(rows) == pytest.approx(1 / 5)  # only the 95¢ buy
+
+
+def test_fast_share_needs_enough_buys():
+    rows = [trade_row(NOW + i, price=0.99, asset=f"a{i}") for i in range(3)]
+    assert fast(rows) is None
+    assert fast(rows, min_buys=3) == 1.0
 
 
 def test_activity_fields():

@@ -23,6 +23,7 @@ class ResolvedBet:
     cost: float
     pnl: float
     resolved_ts: int
+    voided: bool = False  # the market resolved 50/50, so nothing was predicted
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +36,7 @@ class TraderStats:
     last_trade_ts: int = 0
     short_share: float = 0.0
     quiet_gap_h: int | None = None
+    fast_share: float | None = None
     n: int = 0
     wins: int = 0
     win_rate: float = 0.0
@@ -45,6 +47,7 @@ class TraderStats:
     staked: float = 0.0
     top_share: float = 0.0
     median_bet: float = 0.0
+    void_share: float = 0.0
     truncated: bool = False
     maker_rebates: float = 0.0
     account_age_d: float | None = None

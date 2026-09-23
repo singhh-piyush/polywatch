@@ -43,11 +43,11 @@ class FakeGamma:
         return NOW - 400 * DAY
 
 
-def active_trades(n=300, slug="some-market", hours=range(8, 24)):
+def active_trades(n=300, slug="some-market", hours=range(8, 24), price=0.5):
     hours = list(hours)
     yesterday = (NOW // DAY) * DAY - DAY
-    return [trade_row(yesterday - (i % 5) * DAY + hours[i % len(hours)] * 3600 + (i % 60) * 60, slug=slug)
-            for i in range(n)]
+    return [trade_row(yesterday - (i % 5) * DAY + hours[i % len(hours)] * 3600 + (i % 60) * 60, slug=slug,
+                      price=price) for i in range(n)]
 
 
 def sharp_closed(n_bets=40, wins=26, price=0.45, stake=1000.0):
@@ -65,6 +65,7 @@ def build():
     hidden_losers = [position_row(f"h{i}", avg_price=0.45, size=2222.0, cur_price=0.0) for i in range(10)]
     one_hit = [closed_row("big", 100_000.0, ts=NOW - DAY)] + [closed_row(f"s{i}", 100.0, ts=NOW - 2 * DAY)
                                                               for i in range(19)]
+    voided = [closed_row(f"v{i}", 2.0, avg_price=0.49, cur_price=0.5, ts=NOW - DAY) for i in range(60)]
     wallets = {
         "0xsharp": wallet(),
         "0xhidden": wallet(positions=hidden_losers),
@@ -72,6 +73,8 @@ def build():
         "0xonehit": wallet(closed=one_hit),
         "0xsleepy": wallet(trades=[trade_row(NOW - 30 * DAY)]),
         "0xfivemin": wallet(trades=active_trades(slug="btc-updown-5m-1790000000")),
+        "0xsniper": wallet(trades=active_trades(price=0.97)),
+        "0xvoider": wallet(closed=sharp_closed() + voided),
         "0xbroken": ApiError("boom"),
     }
     board = [LeaderboardEntry(w, w[2:], 50_000.0, 400_000.0) for w in wallets]
@@ -93,14 +96,17 @@ async def test_scan_ranks_sharps_and_explains_exclusions():
     assert verdicts["0xonehit"].excluded.startswith("one-hit")
     assert verdicts["0xsleepy"].excluded.startswith("inactive")
     assert verdicts["0xfivemin"].excluded.startswith("bot")
+    assert verdicts["0xsniper"].excluded.startswith("too fast to copy")
+    assert verdicts["0xvoider"].excluded.startswith("void arb")
     assert verdicts["0xbroken"].excluded == "error: boom"
-    assert [p.done for p in progress] == list(range(1, 8)) and progress[-1].total == 7
+    assert [p.done for p in progress] == list(range(1, 10)) and progress[-1].total == 9
 
     assert ("closed", "0xmm") not in data.calls  # cheap checks stop before the expensive fetches
     assert ("closed", "0xsleepy") not in data.calls
+    assert ("closed", "0xsniper") not in data.calls
 
     scan_id, _ = store.latest_scan()
-    assert len(store.load_scan(scan_id)) == 7
+    assert len(store.load_scan(scan_id)) == 9
 
 
 async def test_candidates_merge_leaderboards_and_add_pins():

@@ -17,9 +17,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 PINNED = Settings(
     window_days=90, active_days=14, min_resolved=15, max_resolved=2000, max_lifetime_markets=20_000,
     max_top_share=0.50, min_account_age_d=30, mm_min_volume=5_000_000, mm_max_margin=0.02,
-    max_rebate_rate=0.005, max_short_share=0.50, flag_top_share=0.40, flag_account_age_d=60,
-    flag_quiet_gap_h=3, flag_rebate_rate=0.0025, flag_mm_margin=0.04, flag_min_roi=0.02, flag_min_roi_bets=200,
-    quiet_gap_min_trades=200, shrink_k=10,
+    max_rebate_rate=0.005, max_short_share=0.50, max_fast_share=0.50, max_void_share=0.50, flag_top_share=0.40,
+    flag_account_age_d=60, flag_quiet_gap_h=3, flag_rebate_rate=0.0025, flag_mm_margin=0.04, flag_min_roi=0.02,
+    flag_min_roi_bets=200, flag_fast_share=0.25, quiet_gap_min_trades=200, snipe_price=0.95, flip_window_s=600,
+    fast_min_buys=20, shrink_k=10,
     candidate_depths=(("MONTH", 1000), ("WEEK", 250), ("ALL", 500)),
 )
 
@@ -33,10 +34,11 @@ def iso_date(ts: int) -> str:
 
 
 def closed_row(asset: str, pnl: float, *, avg_price: float = 0.5, bought: float = 100.0,
-               ts: int = NOW - DAY, slug: str = "some-market") -> dict[str, Any]:
+               ts: int = NOW - DAY, slug: str = "some-market",
+               cur_price: float | None = None) -> dict[str, Any]:
     return {
         "asset": asset, "avgPrice": avg_price, "totalBought": bought, "realizedPnl": pnl,
-        "curPrice": 1 if pnl > 0 else 0, "timestamp": ts, "slug": slug, "eventSlug": slug,
+        "curPrice": (1 if pnl > 0 else 0) if cur_price is None else cur_price, "timestamp": ts, "slug": slug, "eventSlug": slug,
         "title": slug, "outcome": "Yes",
     }
 
@@ -56,9 +58,9 @@ def position_row(asset: str, *, avg_price: float = 0.5, size: float = 100.0, cur
 
 def trade_row(ts: int, *, wallet: str = "0xsharp", slug: str = "some-market", side: str = "BUY",
               price: float = 0.5, size: float = 100.0, asset: str = "a1", tx: str | None = None,
-              name: str = "sharp") -> dict[str, Any]:
+              name: str = "sharp", condition: str = "c1") -> dict[str, Any]:
     return {
-        "proxyWallet": wallet, "side": side, "asset": asset, "conditionId": "c1", "price": price,
+        "proxyWallet": wallet, "side": side, "asset": asset, "conditionId": condition, "price": price,
         "size": size, "usdcSize": price * size, "timestamp": ts, "title": "Some market",
         "outcome": "Yes", "slug": slug, "eventSlug": "some-event",
         "transactionHash": tx or f"0x{ts}{asset}{size}", "name": name, "type": "TRADE",

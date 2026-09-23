@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..config import Settings
-from ..fmt import usd_compact
+from ..fmt import cents, usd_compact
 from ..models import TraderStats, Verdict
 
 DAY = 86_400
@@ -28,6 +28,11 @@ def _mm_signals(s: TraderStats, cfg: Settings) -> list[str]:
     return signals
 
 
+def _fast_detail(s: TraderStats, cfg: Settings) -> str:
+    return (f"{s.fast_share or 0:.0%} of recent buys are at {cents(cfg.snipe_price)}+, "
+            f"sold within {cfg.flip_window_s // 60} min or bought on both sides")
+
+
 def early_exclusion(s: TraderStats, now: int, cfg: Settings) -> str | None:
     """Rules that only need leaderboard, /traded and recent-activity data (checked before the expensive fetches)."""
     if s.lb_volume > cfg.mm_min_volume and _margin(s) < cfg.mm_max_margin:
@@ -41,6 +46,8 @@ def early_exclusion(s: TraderStats, now: int, cfg: Settings) -> str | None:
         return f"inactive: last trade {idle_days:.0f}d ago"
     if s.short_share > cfg.max_short_share:
         return f"bot: {s.short_share:.0%} of trades in 5/15-min markets"
+    if s.fast_share is not None and s.fast_share >= cfg.max_fast_share:
+        return f"too fast to copy: {_fast_detail(s, cfg)}"
     return None
 
 
@@ -49,6 +56,8 @@ def full_exclusion(s: TraderStats, now: int, cfg: Settings) -> str | None:
         return reason
     if s.truncated or s.n > cfg.max_resolved:
         return f"bot: over {cfg.max_resolved:,} resolved bets in {cfg.window_days}d"
+    if s.void_share >= cfg.max_void_share:
+        return f"void arb: {s.void_share:.0%} of resolved bets were on voided (50/50) markets"
     if s.n < cfg.min_resolved:
         return f"too few bets: {s.n} resolved in {cfg.window_days}d"
     if s.pnl <= 0:
@@ -72,6 +81,8 @@ def flags_for(s: TraderStats, cfg: Settings) -> tuple[str, ...]:
         flags.append("24/7")
     if _mm_signals(s, cfg):
         flags.append("MM?")
+    if s.fast_share is not None and s.fast_share >= cfg.flag_fast_share:
+        flags.append("FAST")
     return tuple(flags)
 
 
@@ -90,4 +101,6 @@ def describe_flag(flag: str, s: TraderStats, cfg: Settings) -> str:
         return f"trades around the clock (longest quiet stretch {s.quiet_gap_h}h), possible bot"
     if flag == "MM?":
         return "market-maker signals: " + "; ".join(_mm_signals(s, cfg))
+    if flag == "FAST":
+        return f"often too fast to copy by hand: {_fast_detail(s, cfg)}"
     return flag
