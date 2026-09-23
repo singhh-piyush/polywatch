@@ -1,0 +1,17 @@
+[project]
+name = "polywatch"
+version = "0.1.0"
+description = "Find consistently profitable Polymarket traders and stream their bets live"
+readme = "README.md"
+authors = [
+    { name = "Piyush Singh", email = "195040717+singhh-piyush@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+polywatch = "polywatch:main"
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
