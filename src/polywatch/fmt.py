@@ -21,7 +21,8 @@ def payout(price: float) -> str:
 
 
 def delta_cents(entry: float, now: float) -> str:
-    d = round((now - entry) * 100)
+    # Difference of the rounded prices, so "@ 90¢ … now 92¢" reads "+2¢", never "+3¢".
+    d = round(now * 100) - round(entry * 100)
     return "±0¢" if d == 0 else f"{d:+d}¢"
 
 

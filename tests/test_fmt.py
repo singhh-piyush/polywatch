@@ -27,6 +27,8 @@ def test_payout_and_delta():
     assert delta_cents(0.58, 0.59) == "+1¢"
     assert delta_cents(0.58, 0.55) == "-3¢"
     assert delta_cents(0.58, 0.58) == "±0¢"
+    assert delta_cents(0.895, 0.92) == "+2¢"  # matches the rounded prices shown: 90¢ → 92¢
+    assert delta_cents(0.286, 0.304) == "+1¢"  # 29¢ → 30¢
 
 
 def test_money_and_percentages():
