@@ -99,6 +99,9 @@ def feed_text(item: FeedItem, trader: WatchedTrader, now_price: float | None, co
         text.append(f"   now {cents(now_price)} ({delta_cents(item.avg_price, now_price)})", style="dim")
     text.append(f"\n{INDENT}")
     text.append(short_url(market_url(item.event_slug, item.slug)), style="dim underline")
+    if item.fast:
+        text.append(f"   {item.fast} · not worth copying", style="italic")
+        text.stylize("dim")
     return text
 
 

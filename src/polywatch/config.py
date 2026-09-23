@@ -56,14 +56,15 @@ class Settings:
     snipe_price: float = 0.95
     flip_window_s: int = 600
     fast_min_buys: int = 20
-    # composite score
+    # composite score; edge is the part that predicted later results when backtested
     shrink_k: int = 10
-    w_edge: float = 0.35
+    w_edge: float = 0.55
     w_roi: float = 0.25
-    w_win_rate: float = 0.20
-    w_pnl: float = 0.20
+    w_win_rate: float = 0.10
+    w_pnl: float = 0.10
     # watchlist and feed
     watchlist_size: int = 50
+    watch_min_edge: float = 0.0  # auto-watch only traders who win more often than the odds they paid imply
     feed_min_usd: float = 100.0
     conviction_multiple: float = 3.0
     merge_gap_s: int = 30

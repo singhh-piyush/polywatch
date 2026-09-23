@@ -46,6 +46,9 @@ Feed rows look like this:
 dollar. 🔥 marks a bet at least 3x the trader's usual size. `now` is the current price, so you can see
 whether you've missed the move.
 
+Dimmed rows are buys that aren't worth copying: a price of 95¢ or more (at most a few cents to gain),
+or one side of a trade that bought both outcomes of a market. They never trigger an alert.
+
 `polywatch discover [--limit N] [--top N] [--show-excluded]` runs the same scan without the UI
 and prints the ranking (handy for cron or for checking why someone was excluded).
 
@@ -71,13 +74,14 @@ A trader is **excluded** if they:
 
 A high win rate on its own never excludes anyone.
 
-Borderline cases stay in the list with a flag and are not followed automatically:
+Borderline cases stay in the list with a flag. Apart from `24/7`, which is only a badge, flagged
+traders are not followed automatically:
 
 | Flag | Meaning |
 |---|---|
 | `CONC` | one bet is 40–50% of profit |
 | `NEW` | account younger than 60 days |
-| `24/7` | no daily quiet period, which suggests a bot |
+| `24/7` | no daily quiet period, which suggests a bot (badge only) |
 | `MM?` | some market-maker signals: heavy maker rebates, thin margins, or tiny ROI across hundreds of bets |
 | `FAST` | 25–50% of recent buys are too fast to copy (see above) |
 
@@ -85,14 +89,17 @@ The score (0–100) blends each trader's percentile within the group:
 
 | Component | Weight | What it measures |
 |---|---|---|
-| Edge | 35% | how much more often they win than the odds they paid imply, discounted for small samples |
+| Edge | 55% | how much more often they win than the odds they paid imply, discounted for small samples |
 | ROI | 25% | return on the money they bet |
-| Win rate | 20% | share of resolved bets that won |
-| Profit | 20% | total profit, as a percentile, so whales don't dominate |
+| Win rate | 10% | share of resolved bets that won |
+| Profit | 10% | total profit, as a percentile, so whales don't dominate |
 
-The live feed follows the top 50 unflagged traders plus anyone you pin. It watches Polymarket's
-public trade stream and also polls each trader's activity every 20 seconds, which catches
-limit-order fills the stream doesn't carry.
+Edge carries the most weight because, when backtested, it was the part of the score that predicted
+how a trader did over the following month.
+
+The live feed follows the top 50 traders who aren't flagged and have a positive edge, plus anyone
+you pin. It watches Polymarket's public trade stream and also polls each trader's activity every
+20 seconds, which catches limit-order fills the stream doesn't carry.
 
 ## Configuration
 

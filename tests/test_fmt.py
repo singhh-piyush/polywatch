@@ -89,3 +89,10 @@ def test_alert_text():
     assert "Chelsea vs Brentford" in body and "$4,210" in body and "3.4x usual size" in body
     _, quiet = alert_text(item(conviction=1.0), watched(name="alice"), 3.0)
     assert "usual size" not in quiet
+
+
+def test_fast_bets_are_labelled():
+    fast = item()
+    fast.fast = "both sides"
+    assert "both sides · not worth copying" in feed_text(fast, watched(), None, 3.0).plain
+    assert "not worth copying" not in feed_text(item(), watched(), None, 3.0).plain

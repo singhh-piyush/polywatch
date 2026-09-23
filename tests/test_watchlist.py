@@ -5,9 +5,10 @@ from polywatch.models import RankedTrader, Verdict
 from tests.factories import stats
 
 
-def ranked(*specs):
-    return [RankedTrader(stats(wallet=w, username=w[2:]), Verdict(flags=f), score=100 - i, rank=i + 1)
-            for i, (w, f) in enumerate(specs)]
+def ranked(*specs, edges=None):
+    edges = edges or {}
+    return [RankedTrader(stats(wallet=w, username=w[2:], edge=edges.get(w, 0.16)), Verdict(flags=f), score=100 - i,
+                         rank=i + 1) for i, (w, f) in enumerate(specs)]
 
 
 def test_select_skips_flagged_and_banned_then_adds_pins():
@@ -29,3 +30,13 @@ def test_build_watchlist_uses_override_names_and_stats():
     assert w["0xpinned"].rank is None and w["0xpinned"].pinned and w["0xpinned"].median_bet == 250.0
     assert w["0xpinned"].name == "pinny"
     assert w["0xnew"].name == "Newbie" and w["0xnew"].median_bet == 0.0 and w["0xnew"].win_rate is None
+
+
+def test_only_traders_who_beat_the_odds_are_auto_watched():
+    r = ranked(("0xa", ()), ("0xb", ()), ("0xc", ()), edges={"0xa": 0.0, "0xb": -0.02})
+    assert select_watchlist(r, 5, pins={"0xb"}, bans=set(), min_edge=0.0) == ["0xc", "0xb"]  # pins still count
+
+
+def test_24_7_is_a_badge_not_a_hold_back():
+    r = ranked(("0xa", ("24/7",)), ("0xb", ("24/7", "NEW")), ("0xc", ("FAST",)))
+    assert select_watchlist(r, 5, pins=set(), bans=set()) == ["0xa"]

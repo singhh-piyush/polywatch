@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 
 from ..config import Settings
+from ..fmt import cents
 from ..markets import is_excluded_market
 from ..models import FeedItem, Trade, WatchedTrader
 
@@ -17,6 +18,8 @@ class Aggregator:
         self.cfg = cfg
         self.watched = watched or {}
         self._groups: dict[tuple[str, str, str], list[FeedItem]] = defaultdict(list)
+        self._market_buys: dict[tuple[str, str], list[FeedItem]] = defaultdict(list)
+        self._changed: list[FeedItem] = []
         self._seen: set[tuple[str, str, str, str, float, float]] = set()
         self._seen_order: deque[tuple[str, str, str, str, float, float]] = deque()
         self._max_seen = max_seen
@@ -40,7 +43,32 @@ class Aggregator:
             item.tx_hashes.append(trade.tx_hash)
         # Conviction is about new money going in; a big exit is not a bet.
         item.conviction = item.usd / trader.median_bet if trade.side == "BUY" and trader.median_bet > 0 else None
+        if trade.side == "BUY":
+            self._mark_fast(item, trade.condition_id)
         return item if item.usd >= self.cfg.feed_min_usd else None
+
+    def take_changed(self) -> list[FeedItem]:
+        """Earlier items changed by the last add (the first leg of a both-sides trade), to redraw."""
+        changed, self._changed = self._changed, []
+        return changed
+
+    def _mark_fast(self, item: FeedItem, condition_id: str) -> None:
+        """Mark buys a hand-copier gains nothing from: near-certain outcomes, and either leg of a both-sides trade."""
+        window = self.cfg.flip_window_s
+        buys = self._market_buys[(item.wallet, condition_id)]
+        if item not in buys:
+            buys.append(item)
+            if len(buys) > MAX_ITEMS_PER_GROUP:
+                del buys[0]
+        for other in buys:
+            near = other.first_ts - window <= item.last_ts and item.first_ts <= other.last_ts + window
+            if other.asset != item.asset and near:
+                item.fast = "both sides"
+                if other.fast != "both sides":
+                    other.fast = "both sides"
+                    self._changed.append(other)
+        if item.fast != "both sides":
+            item.fast = f"{cents(self.cfg.snipe_price)}+" if item.avg_price >= self.cfg.snipe_price else None
 
     def _first_sighting(self, key: tuple[str, str, str, str, float, float]) -> bool:
         if key in self._seen:
@@ -72,5 +100,7 @@ class Aggregator:
 
 
 def is_alert_worthy(item: FeedItem, trader: WatchedTrader, cfg: Settings) -> bool:
+    if item.fast:
+        return False
     high_conviction = item.conviction is not None and item.conviction >= cfg.conviction_multiple
     return trader.pinned or high_conviction

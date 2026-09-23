@@ -121,7 +121,8 @@ class PolywatchApp(App):
         all_traders = self.store.load_scan(scan[0]) if scan else []
         overrides = self.store.overrides()
         names = self.store.override_names()
-        self.watched = build_watchlist(all_traders, self.cfg.watchlist_size, overrides, names)
+        self.watched = build_watchlist(all_traders, self.cfg.watchlist_size, overrides, names,
+                                       min_edge=self.cfg.watch_min_edge)
         self.aggregator.set_watched(self.watched)
         self.feed_service.set_watched(self.watched)
         known = {t.stats.wallet for t in all_traders}
@@ -237,12 +238,16 @@ class PolywatchApp(App):
 
     def handle_trade(self, trade: Trade) -> None:
         item = self.aggregator.add(trade)
+        feed = self.query_one(FeedList)
+        for other in self.aggregator.take_changed():
+            if other.key in feed.rows:
+                feed.rows[other.key].redraw()
         if item is None:
             return
         trader = self.watched.get(item.wallet)
         if trader is None:
             return
-        self.query_one(FeedList).upsert(item, trader, self.prices.get(item.asset), self.cfg.conviction_multiple)
+        feed.upsert(item, trader, self.prices.get(item.asset), self.cfg.conviction_multiple)
         self.store.save_feed_item(item)
         fresh = item.last_ts >= time.time() - ALERT_MAX_AGE_S
         if fresh and not item.notified and is_alert_worthy(item, trader, self.cfg):

@@ -7,6 +7,7 @@ from typing import Any
 from rich.text import Text
 from textual.widgets import DataTable
 
+from ..discovery.filters import holds_back
 from ..fmt import trader_cells
 from ..models import RankedTrader, TraderStats, Verdict
 
@@ -72,7 +73,7 @@ class TradersTable(DataTable):
                 self.add_column(label, key=key)
 
     def _visible(self, t: RankedTrader) -> bool:
-        return self._show_flagged or not t.verdict.flags or self._overrides.get(t.stats.wallet) == "pin"
+        return self._show_flagged or not holds_back(t.verdict.flags) or self._overrides.get(t.stats.wallet) == "pin"
 
     def _add(self, t: RankedTrader) -> None:
         if not self._visible(t):

@@ -1,6 +1,6 @@
 import pytest
 
-from polywatch.discovery.filters import describe_flag, early_exclusion, evaluate, full_exclusion
+from polywatch.discovery.filters import describe_flag, early_exclusion, evaluate, full_exclusion, holds_back
 from tests.factories import DAY, NOW, PINNED, stats
 
 CFG = PINNED
@@ -85,3 +85,8 @@ def test_describe_flag_includes_the_numbers():
     assert "0.31%" in describe_flag("MM?", stats(maker_rebates=250.0), CFG)
     assert "1.0% ROI across 250 bets" in describe_flag("MM?", stats(n=250, roi=0.01), CFG)
     assert "30% of recent buys" in describe_flag("FAST", stats(fast_share=0.3), CFG)
+
+
+def test_holds_back():
+    assert not holds_back(()) and not holds_back(("24/7",))
+    assert holds_back(("NEW",)) and holds_back(("24/7", "MM?"))

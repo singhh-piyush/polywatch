@@ -158,6 +158,7 @@ class FeedItem:
     usd: float = 0.0
     fills: int = 0
     conviction: float | None = None
+    fast: str | None = None  # why copying this buy gains nothing, e.g. "95¢+" or "both sides"
     tx_hashes: list[str] = field(default_factory=list)
     notified: bool = False
 

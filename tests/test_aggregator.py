@@ -2,7 +2,8 @@ from polywatch.config import Settings
 from polywatch.feed.aggregator import Aggregator, is_alert_worthy
 from tests.factories import NOW, trade, watched
 
-CFG = Settings(feed_min_usd=100.0, merge_gap_s=30, merge_max_s=300, conviction_multiple=3.0)
+CFG = Settings(feed_min_usd=100.0, merge_gap_s=30, merge_max_s=300, conviction_multiple=3.0, snipe_price=0.95,
+               flip_window_s=600)
 
 
 def agg(**watch_kw):
@@ -85,3 +86,22 @@ def test_is_alert_worthy():
 def test_sells_are_not_conviction_bets():
     item = agg(median_bet=100.0).add(trade(NOW, size=2000, price=0.5, side="SELL"))  # $1,000 exit
     assert item.conviction is None and not is_alert_worthy(item, watched(), CFG)
+
+
+def test_buys_at_95_cents_or_more_are_marked_fast():
+    a = agg(median_bet=10.0)
+    item = a.add(trade(NOW, size=200, price=0.97))
+    assert item.fast == "95¢+" and not is_alert_worthy(item, watched(pinned=True), CFG)
+    assert agg().add(trade(NOW, size=200, price=0.94)).fast is None
+    assert agg().add(trade(NOW, size=200, price=0.97, side="SELL")).fast is None
+
+
+def test_both_sides_of_a_market_are_marked_fast():
+    a = agg()
+    yes = a.add(trade(NOW, size=400, asset="yes"))
+    assert yes.fast is None and a.take_changed() == []
+    no = a.add(trade(NOW + 60, size=400, asset="no"))
+    assert yes.fast == no.fast == "both sides"
+    assert a.take_changed() == [yes] and a.take_changed() == []
+    later = a.add(trade(NOW + 60 + 601, size=400, asset="yes"))  # well after the other side: a new view
+    assert later.fast is None

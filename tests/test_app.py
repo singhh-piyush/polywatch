@@ -155,3 +155,14 @@ async def test_alerts_only_for_bets_that_are_still_recent():
         await pilot.pause()
         assert [url for _, _, url in app.notifier.sent] == ["https://polymarket.com/event/some-event/some-market"]
         assert len(app.query_one(FeedList).rows) == 2
+
+
+async def test_both_sides_trade_dims_the_first_leg_too():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        now = int(time.time())
+        app.handle_trade(trade(now - 10, wallet="0xaaa", price=0.5, size=400, asset="yes"))
+        app.handle_trade(trade(now, wallet="0xaaa", price=0.5, size=400, asset="no"))
+        await pilot.pause()
+        rows = app.query_one(FeedList).rows.values()
+        assert len(rows) == 2 and all("both sides" in row.rendered.plain for row in rows)

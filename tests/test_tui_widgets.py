@@ -19,7 +19,7 @@ def traders():
     return [
         RankedTrader(stats(wallet="0xa", username="alice", win_rate=0.6), Verdict(), score=90, rank=1),
         RankedTrader(stats(wallet="0xb", username="bob", win_rate=0.8), Verdict(flags=("NEW",)), score=80, rank=2),
-        RankedTrader(stats(wallet="0xc", username="carol", win_rate=0.7), Verdict(), score=70, rank=3),
+        RankedTrader(stats(wallet="0xc", username="carol", win_rate=0.7), Verdict(flags=("24/7",)), score=70, rank=3),
     ]
 
 

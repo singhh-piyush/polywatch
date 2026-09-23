@@ -6,6 +6,8 @@ from ..fmt import cents, usd_compact
 from ..models import TraderStats, Verdict
 
 DAY = 86_400
+# Shown as a badge only: when backtested, traders active around the clock were as copyable as anyone.
+BADGE_ONLY_FLAGS = frozenset({"24/7"})
 
 
 def _margin(s: TraderStats) -> float:
@@ -84,6 +86,11 @@ def flags_for(s: TraderStats, cfg: Settings) -> tuple[str, ...]:
     if s.fast_share is not None and s.fast_share >= cfg.flag_fast_share:
         flags.append("FAST")
     return tuple(flags)
+
+
+def holds_back(flags: tuple[str, ...]) -> bool:
+    """Whether these flags keep a trader off the automatic watchlist."""
+    return any(flag not in BADGE_ONLY_FLAGS for flag in flags)
 
 
 def evaluate(s: TraderStats, now: int, cfg: Settings) -> Verdict:

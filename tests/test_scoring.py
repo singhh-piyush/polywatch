@@ -33,3 +33,10 @@ def test_weights_come_from_settings():
     roi_only = Settings(w_edge=0.0, w_roi=1.0, w_win_rate=0.0, w_pnl=0.0)
     assert rank_traders([(a, Verdict()), (b, Verdict())], edge_only)[0].stats.wallet == "0xa"
     assert rank_traders([(a, Verdict()), (b, Verdict())], roi_only)[0].stats.wallet == "0xb"
+
+
+def test_edge_outweighs_win_rate_and_pnl_by_default():
+    sharp = stats(wallet="0xsharp", edge=0.3, roi=0.1, win_rate=0.5, pnl=1_000.0)
+    favourite_backer = stats(wallet="0xfav", edge=0.1, roi=0.1, win_rate=0.7, pnl=50_000.0)
+    ranked = rank_traders([(favourite_backer, Verdict()), (sharp, Verdict())], Settings())
+    assert ranked[0].stats.wallet == "0xsharp"
