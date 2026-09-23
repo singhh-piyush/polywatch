@@ -1,0 +1,24 @@
+{
+  "connection_id": "gbX0Z091eWeIKEhi0A==",
+  "payload": {
+    "asset": "32850105428864949608106186744664999308698113656159447895728805954924321438271",
+    "conditionId": "0x58fe37d6b63944e8567e65dab6244745b06fd682cf18a03482dba3d43004306b",
+    "eventSlug": "val-tl1-pr1-2026-09-24",
+    "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/valorant-logo-6fab741a16.png",
+    "name": "acorp",
+    "outcome": "Paper Rex",
+    "outcomeIndex": 1,
+    "price": 0.5599999234188139,
+    "proxyWallet": "0x99E42Eb9038705165b22f821e27659C1Dc41e4c4",
+    "pseudonym": "Untimely-Spite",
+    "side": "SELL",
+    "size": 2.089286,
+    "slug": "val-tl1-pr1-2026-09-24",
+    "timestamp": 1790187040,
+    "title": "Valorant: Team Liquid vs Paper Rex (BO3) - VCT Champions Group C",
+    "transactionHash": "0x40b65476959dddb0638b45d70be14179c692638bdc86c3d9fa868dfc467a9d9e"
+  },
+  "timestamp": 1790187040672,
+  "topic": "activity",
+  "type": "trades"
+}

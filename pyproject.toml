@@ -7,11 +7,28 @@ authors = [
     { name = "Piyush Singh", email = "195040717+singhh-piyush@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "httpx>=0.28",
+    "rich>=13.9",
+    "textual>=8.2",
+    "websockets>=15",
+]
 
 [project.scripts]
-polywatch = "polywatch:main"
+polywatch = "polywatch.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=1.0",
+    "respx>=0.23",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

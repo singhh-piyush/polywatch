@@ -1,0 +1,20 @@
+{
+  "$schema": "https://gamma-api.polymarket.com/schemas/PublicProfileResponse.json",
+  "createdAt": "2026-01-13T16:55:49.270365Z",
+  "proxyWallet": "0xccc4e132674619c6faccfeb4e05d6173088f9267",
+  "displayUsernamePublic": true,
+  "pseudonym": "Old-Fashioned-Resist",
+  "name": "Papeasy",
+  "users": [
+    {
+      "id": "5125382",
+      "creator": false,
+      "mod": false,
+      "communityMod": false
+    }
+  ],
+  "verifiedBadge": false,
+  "takerTier": 0,
+  "takerTierName": "Tier 0",
+  "weightedVolume": 1.9136
+}

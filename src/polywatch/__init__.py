@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from polywatch!")
+__version__ = "0.1.0"

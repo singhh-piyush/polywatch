@@ -1,0 +1,29 @@
+[
+  {
+    "rank": "1",
+    "proxyWallet": "0x111f73e91f85b6fe4de1ddec3de2fe32122e355b",
+    "userName": "Papeasy",
+    "xUsername": "",
+    "verifiedBadge": false,
+    "vol": 0,
+    "pnl": 5842111.240802065
+  },
+  {
+    "rank": "2",
+    "proxyWallet": "0x4f1d5ae26fc31472966e951af3183308736d8de2",
+    "userName": "e46m3",
+    "xUsername": "love_u_4ever",
+    "verifiedBadge": false,
+    "vol": 2790535.712124045,
+    "pnl": 4335210.127690584
+  },
+  {
+    "rank": "3",
+    "proxyWallet": "0x51698a47f840a242abc2ca0351371c7ffac41842",
+    "userName": "00gringo00",
+    "xUsername": "",
+    "verifiedBadge": false,
+    "vol": 28166736.980958,
+    "pnl": 3654334.788786005
+  }
+]
