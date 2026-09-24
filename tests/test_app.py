@@ -1,14 +1,17 @@
 import time
 
 import httpx
+from textual.widgets import Static
 
 from polywatch.api.http import Http
 from polywatch.config import Settings
 from polywatch.discovery.scoring import rank_traders
-from polywatch.models import Verdict
+from polywatch.feed.timing import MarketTimes
+from polywatch.models import Holding, MarketTiming, Verdict
 from polywatch.store import Store
 from polywatch.tui.add import AddTrader
 from polywatch.tui.app import PolywatchApp
+from polywatch.tui.common import CommonList
 from polywatch.tui.detail import TraderDetail
 from polywatch.tui.feed import FeedList
 from polywatch.tui.traders import TradersTable
@@ -166,3 +169,118 @@ async def test_both_sides_trade_dims_the_first_leg_too():
         await pilot.pause()
         rows = app.query_one(FeedList).rows.values()
         assert len(rows) == 2 and all("both sides" in row.rendered.plain for row in rows)
+
+
+class FakeGamma:
+    def __init__(self, timings):
+        self.timings = timings
+
+    async def market_timing(self, slug):
+        return self.timings.get(slug)
+
+
+def panes(app):
+    return app.query_one("#buys", FeedList), app.query_one("#sells", FeedList)
+
+
+async def test_traders_take_a_quarter_and_trades_the_rest():
+    app, _ = make_app()
+    async with app.run_test(size=(200, 50)) as pilot:
+        await pilot.pause()
+        assert app.query_one(TradersTable).size.width == 50
+        buys, sells = panes(app)
+        assert buys.region.width > sells.region.width and app.query_one(CommonList).region.y < buys.region.y
+
+
+async def test_buys_and_sells_go_to_separate_panes():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        now = int(time.time())
+        app.handle_trade(trade(now, wallet="0xaaa", size=400, asset="a1"))
+        app.handle_trade(trade(now, wallet="0xaaa", size=400, asset="a2", side="SELL"))
+        await pilot.pause()
+        buys, sells = panes(app)
+        assert [r.feed_item.side for r in buys.rows.values()] == ["BUY"]
+        assert [r.feed_item.side for r in sells.rows.values()] == ["SELL"]  # no account yet: every sell shows
+        assert sells.border_title == "Sells · all (press m: your account) · following"
+
+
+async def test_with_an_account_only_sells_of_what_you_hold_show_and_alert():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        app.my_wallet = "0xme"
+        now = int(time.time())
+        app.handle_trade(trade(now, wallet="0xbbb", size=400, asset="later", side="SELL"))
+        app.set_holdings({"held": Holding(120, 0.58)})
+        app.handle_trade(trade(now, wallet="0xaaa", size=400, asset="other", side="SELL"))
+        app.handle_trade(trade(now, wallet="0xaaa", size=400, price=0.71, asset="held", side="SELL"))
+        await pilot.pause()
+        _, sells = panes(app)
+        assert [r.feed_item.asset for r in sells.rows.values()] == ["held"]
+        assert "you hold 120 sh @ 58¢" in sells.rows[next(iter(sells.rows))].rendered.plain
+        [(title, body, _)] = app.notifier.sent
+        assert title == "EXIT: alice sold Yes @ 71¢" and body.endswith("You hold 120 sh @ 58¢")
+        app.set_holdings({"later": Holding(10, 0.4)})  # you bought it: its earlier sell shows, "held" goes
+        await pilot.pause()
+        assert [r.feed_item.asset for r in sells.rows.values()] == ["later"]
+
+
+async def test_buys_of_what_you_hold_are_tagged():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        app.my_wallet = "0xme"
+        app.handle_trade(trade(int(time.time()), wallet="0xaaa", size=400, asset="a1"))
+        await pilot.pause()
+        buys, _ = panes(app)
+        assert "✓ you hold" not in next(iter(buys.rows.values())).rendered.plain
+        app.set_holdings({"a1": Holding(5, 0.5)})
+        assert "✓ you hold" in next(iter(buys.rows.values())).rendered.plain
+
+
+async def test_two_watched_traders_on_one_outcome_make_a_common_trade():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        now = int(time.time())
+        app.handle_trade(trade(now - 60, wallet="0xaaa", size=400, asset="a1"))
+        app.handle_trade(trade(now, wallet="0xbbb", size=400, asset="a1"))
+        app.refresh_common()
+        await pilot.pause()
+        common = app.query_one(CommonList)
+        [bet] = common.bets()
+        assert bet.names == ("alice", "bob") and "2 traders" in common.children[0].rendered.plain
+
+
+async def test_markets_show_time_to_resolve_and_resolved_ones_drop_out():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        now = int(time.time())
+        app.times = MarketTimes(FakeGamma({
+            "soon": MarketTiming(start_ts=now + 2 * 3600 + 630, end_ts=now + 7 * 86400),
+            "done": MarketTiming(start_ts=now - 86400, end_ts=now, closed=True),
+        }))
+        app.handle_trade(trade(now, wallet="0xaaa", size=400, asset="a1", slug="soon", condition="m1"))
+        app.handle_trade(trade(now, wallet="0xaaa", size=400, asset="a2", slug="done", condition="m2"))
+        app.handle_trade(trade(now, wallet="0xbbb", size=400, asset="a2", slug="done", condition="m2"))
+        await pilot.pause()
+        await pilot.pause()
+        buys, _ = panes(app)
+        assert [r.feed_item.slug for r in buys.rows.values()] == ["soon"]
+        assert "⏱ in 2h 10m" in next(iter(buys.rows.values())).rendered.plain
+        app.refresh_common()
+        assert app.query_one(CommonList).bets() == [] and all(i.slug != "done" for i in app.items.values())
+
+
+async def test_m_sets_your_account():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        await pilot.press("m")
+        await pilot.pause()
+        assert isinstance(app.screen, AddTrader)
+        await pilot.press(*WALLET, "enter")
+        await pilot.pause()
+        assert app.store.get_pref("my_wallet") == WALLET and app.my_wallet == WALLET
+        app.set_holdings({"a1": Holding(5, 0.5)})
+        app.update_status()
+        assert str(app.query_one("#status", Static).content).endswith(" · 1 position")
+        _, sells = panes(app)
+        assert sells.border_title.startswith("Sells · your holdings")
