@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 import time
@@ -16,6 +17,7 @@ GAMMA_API = "https://gamma-api.polymarket.com"
 CLOB_API = "https://clob.polymarket.com"
 
 RETRYABLE = {429, 500, 502, 503, 504}
+BIG_BODY = 256_000  # bytes; bigger responses are parsed in a worker thread so the event loop keeps running
 
 
 class ApiError(Exception):
@@ -52,15 +54,22 @@ class Http:
         # Documented limits: 150 req/10s for (closed-)positions, 1000 req/10s overall. Stay below both.
         self._positions = RateLimiter(120, 10)
         self._default = RateLimiter(600, 10)
+        # /trades (200 req/10s) is only used by the short-market indexer; it gets its own bucket so a backfill
+        # never slows the live feed down.
+        self._trades = RateLimiter(150, 10)
+        self.requests = 0  # every request sent, for the request-rate meter
 
     def _limiter(self, path: str) -> RateLimiter:
+        if path == "/trades":
+            return self._trades
         return self._positions if "positions" in path else self._default
 
-    async def get_json(self, base: str, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get_json(self, base: str, path: str, params: Any = None) -> Any:
         url = f"{base}{path}"
         err: Exception = ApiError("no attempts made")
         for attempt in range(1, self.max_tries + 1):
             await self._limiter(path).acquire()
+            self.requests += 1
             try:
                 resp = await self.client.get(url, params=params)
             except httpx.TransportError as exc:
@@ -68,6 +77,8 @@ class Http:
             else:
                 if resp.status_code < 400:
                     try:
+                        if len(resp.content) > BIG_BODY:
+                            return await asyncio.to_thread(json.loads, resp.content)
                         return resp.json()
                     except ValueError:  # an overload or proxy page instead of JSON
                         err = ApiError(f"GET {url} -> {resp.status_code} with a non-JSON body: {resp.text[:100]}")

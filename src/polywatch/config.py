@@ -16,6 +16,11 @@ def _db_path() -> Path:
     return _xdg("XDG_DATA_HOME", ".local/share") / "polywatch" / "polywatch.db"
 
 
+def short_db_path(db_path: Path) -> Path:
+    """Short-market history lives in a file of its own: it is written constantly and would hold up the main one."""
+    return db_path.with_name("short.db")
+
+
 def _log_path() -> Path:
     return _xdg("XDG_STATE_HOME", ".local/state") / "polywatch" / "polywatch.log"
 
@@ -74,6 +79,22 @@ class Settings:
     backfill_hours: int = 24
     alerts: bool = True
     stale_scan_hours: int = 24
+    # web
+    web_port: int = 8765
+    # short markets (5-minute, 15-minute and hourly up-or-down windows)
+    short_coins: tuple[str, ...] = ("btc", "eth", "sol", "xrp", "bnb", "doge", "hype", "zec")
+    short_backfill_days: int = 7
+    short_index_concurrency: int = 8
+    short_follow_n: int = 25
+    short_min_windows: int = 20      # fewer windows than this and a trader isn't ranked
+    short_crowd_n: int = 60          # traders whose bets make up the crowd probability
+    short_poll_s: int = 5            # /activity poll for followed short traders (maker fills)
+    badge_arb_share: float = 0.30    # bought both sides in this share of windows
+    badge_snipe_share: float = 0.50  # this share of buy dollars at 95c+
+    badge_last_sec_s: int = 20       # typical last buy this close to the end
+    badge_last_sec_share: float = 0.50
+    badge_hft_fills: float = 50      # average fills per window
+    badge_maker_share: float = 0.50  # sold minted pairs in this share of windows
     # files
     db_path: Path = field(default_factory=_db_path)
     log_path: Path = field(default_factory=_log_path)
@@ -95,6 +116,8 @@ def load_settings(path: Path | None = None) -> Settings:
             raise ValueError(f"unknown setting {key!r} in {path}")
         if key in ("db_path", "log_path"):
             value = Path(value).expanduser()
+        elif key == "short_coins":
+            value = tuple(str(c).lower() for c in value)
         elif key == "candidate_depths":
             value = tuple((str(period), int(depth)) for period, depth in value)
         overrides[key] = value

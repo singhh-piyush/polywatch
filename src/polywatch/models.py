@@ -176,6 +176,8 @@ class MarketTiming:
     start_ts: int | None
     end_ts: int | None
     closed: bool = False
+    category: str = ""
+    icon: str = ""
 
 
 @dataclass(frozen=True, slots=True)
