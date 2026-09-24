@@ -32,7 +32,7 @@ from ..markets import market_url, profile_url
 from ..models import FeedItem, Holding, RankedTrader, Trade, TraderStats, Verdict, WatchedTrader
 from ..store import Store
 from .add import AddTrader
-from .common import CommonList, CommonRow
+from .common import CommonList, TextList, TextRow
 from .detail import TraderDetail
 from .feed import FeedList, FeedRow
 from .traders import TradersTable
@@ -209,7 +209,7 @@ class PolywatchApp(App):
         if isinstance(self.focused, FeedList):
             item = self.focused.selected_item()
             return item.wallet if item else None
-        if isinstance(self.focused, CommonList):
+        if isinstance(self.focused, TextList):
             return None
         return self.query_one(TradersTable).selected_wallet()
 
@@ -252,10 +252,10 @@ class PolywatchApp(App):
             if item:
                 self.opener(market_url(item.event_slug, item.slug))
             return
-        if isinstance(self.focused, CommonList):
-            bet = self.focused.selected_bet()
-            if bet:
-                self.opener(market_url(bet.event_slug, bet.slug))
+        if isinstance(self.focused, TextList):
+            value = self.focused.selected()
+            if value:
+                self.opener(market_url(value.event_slug, value.slug))
             return
         wallet = self.query_one(TradersTable).selected_wallet()
         if wallet:
@@ -344,8 +344,8 @@ class PolywatchApp(App):
         if isinstance(event.item, FeedRow):
             item = event.item.feed_item
             self.opener(market_url(item.event_slug, item.slug))
-        elif isinstance(event.item, CommonRow):
-            self.opener(market_url(event.item.bet.event_slug, event.item.bet.slug))
+        elif isinstance(event.item, TextRow):
+            self.opener(market_url(event.item.value.event_slug, event.item.value.slug))
 
     def set_stream_status(self, status: str) -> None:
         self.stream_status = status

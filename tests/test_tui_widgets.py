@@ -1,9 +1,10 @@
 from rich.text import Text
 from textual.app import App
 
-from polywatch.models import CommonBet, FeedItem, Holding, RankedTrader, Verdict
+from polywatch.models import CommonBet, FeedItem, Holding, MyPosition, RankedTrader, Verdict
 from polywatch.tui.common import CommonList
 from polywatch.tui.feed import FeedList
+from polywatch.tui.mine import MyTrades
 from polywatch.tui.traders import TradersTable
 from tests.factories import stats, watched
 
@@ -256,8 +257,28 @@ async def test_common_list_rebuilds_and_keeps_the_selection():
         common.index = 1
         common.show([(cbet("z", 3), Text("z")), (cbet("x"), Text("x")), (cbet("y"), Text("y"))])
         await pilot.pause()
-        assert [row.bet.asset for row in common.children] == ["z", "x", "y"]
+        assert [row.value.asset for row in common.children] == ["z", "x", "y"]
         assert common.selected_bet().asset == "y" and common.border_subtitle == "3"
         common.show([])
         await pilot.pause()
         assert len(common.children) == 0 and common.selected_bet() is None
+
+
+def mypos(asset):
+    return MyPosition(asset=asset, title=asset, outcome="Yes", slug=asset, event_slug=asset, shares=1.0,
+                      avg_price=0.5, cur_price=0.5)
+
+
+async def test_my_trades_list():
+    mine = MyTrades()
+    async with Host(mine).run_test() as pilot:
+        assert mine.border_title == "My trades" and mine.border_subtitle == "no open positions"
+        mine.show([], subtitle="press m: your account")
+        assert mine.border_subtitle == "press m: your account"
+        mine.show([(mypos("a"), Text("a")), (mypos("b"), Text("b"))], subtitle="2 open · $1.00 · +$0.00 (+0%)")
+        await pilot.pause()
+        mine.index = 1
+        mine.show([(mypos("b"), Text("b")), (mypos("a"), Text("a"))], subtitle="2 open · $1.10 · +$0.10 (+10%)")
+        await pilot.pause()
+        assert [p.asset for p in mine.values()] == ["b", "a"] and mine.selected().asset == "b"
+        assert mine.border_subtitle == "2 open · $1.10 · +$0.10 (+10%)"
