@@ -222,3 +222,26 @@ async def test_indexer_indexes_settled_windows_and_retries_unsettled(store):
     # windows Gamma doesn't know that closed over an hour ago are recorded as missing, not refetched forever
     old = [w for w in ix.pending(now)[0] if now - w.end_ts > 3600]
     assert old
+
+
+# --- live windows ------------------------------------------------------------------------------------
+
+def test_selling_to_lock_in_profit_does_not_count_as_backing_the_other_side(store):
+    from polywatch.models import Trade
+    from polywatch.short.live import LiveWindow, ShortService
+    from polywatch.web.bus import EventBus
+
+    w = parse_window("btc-updown-5m-1790227800")
+    svc = ShortService(Settings(), store=store, data=None, gamma=None, bus=EventBus(), clock=lambda: w.end_ts - 30)
+    svc.members = {"win": Member("win", 0.2, 50)}
+    lw = svc.windows[w.slug] = LiveWindow(w, tokens=("up", "down"), known=True)
+
+    def trade(side, asset, price):
+        return Trade(wallet="win", side=side, asset=asset, condition_id="c", price=price, size=100, ts=w.end_ts - 40,
+                     title="", outcome="Up" if asset == "up" else "Down", slug=w.slug, event_slug=w.slug, tx_hash=side)
+
+    svc.on_trade(trade("BUY", "up", 0.6))
+    svc.on_trade(trade("SELL", "up", 0.97))  # taking profit near the close
+    assert lw.stances["win"] == [60.0, 0.0]
+    card = svc.windows_json()[0]
+    assert (card["crowd"]["first_n"], card["crowd"]["second_n"]) == (1, 0)

@@ -268,6 +268,7 @@ tbody tr:hover { background: var(--raised); }
 .verdict .big.up { color: var(--up); }
 .verdict .big.down { color: var(--down); }
 .verdict .what { font-size: 13px; color: var(--muted); text-align: right; }
+.split-label { font-size: 12px; color: var(--faint); margin-bottom: 6px; }
 .split { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--line); }
 .split .u { background: var(--up); }
 .split .d { background: var(--down); }

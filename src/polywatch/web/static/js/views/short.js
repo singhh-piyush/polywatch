@@ -72,10 +72,12 @@ function windowCard(w, f) {
   const market = w.price;
   const lead = p ?? market;
   const leadUp = lead == null ? null : lead >= 0.5;
-  let big = lead == null ? "–" : `${leadUp ? up : down} ${Math.round((leadUp ? lead : 1 - lead) * 100)}%`;
-  let what = p != null
-    ? `winners' view · market ${cents(market)} ${esc(up)}`
-    : market != null ? "market price" : "waiting for the first trade";
+  const shown = lead == null ? null : Math.min(99, Math.max(1, Math.round((leadUp ? lead : 1 - lead) * 100)));
+  let big = lead == null ? "–" : `${leadUp ? up : down} ${shown}%`;
+  const [cUp, cDown] = [w.crowd.first_n, w.crowd.second_n];
+  let what = p != null && cUp + cDown > 0
+    ? `${cUp + cDown} proven winner${cUp + cDown === 1 ? "" : "s"} bought: ${cUp} ${esc(up)}, ${cDown} ${esc(down)} · market ${cents(market)} ${esc(up)}`
+    : market != null ? `market price${p != null ? " · no proven winners in yet" : ""}` : "waiting for the first trade";
   if (w.closed) {
     const settled = market != null && (market >= 0.9 || market <= 0.1);
     big = settled ? `${leadUp ? up : down} won` : "Settling";
@@ -98,14 +100,15 @@ function windowCard(w, f) {
       <div class="rail-foot"><span>${esc(down)}</span><span>${esc(up)}</span></div>
     </div>
     <div>
-      <div class="split" title="Followed traders' money on each side"><i class="u" style="width:${share}%"></i><i class="d" style="width:${100 - share}%"></i></div>
+      <div class="split-label">Top-profit traders' money</div>
+      <div class="split" title="What the top traders by profit bought in this window"><i class="u" style="width:${share}%"></i><i class="d" style="width:${100 - share}%"></i></div>
       <div class="split-nums"><span class="pos">${esc(up)} ${usdShort(uUsd)} · ${uN} trader${uN === 1 ? "" : "s"}</span><span class="neg">${dN} trader${dN === 1 ? "" : "s"} · ${usdShort(dUsd)} ${esc(down)}</span></div>
     </div>
     <div class="win-bets">${bets.length ? bets.map((b) => `<div class="win-bet">
         <button class="who" data-short-wallet="${esc(b.wallet)}">${b.rank ? `#${b.rank} ` : ""}${esc(displayName(b.name, b.wallet))}${b.is_bot ? " ·bot" : ""}</button>
         <span><span class="pill ${b.outcome === up ? "up" : "down"}">${b.side === "BUY" ? "" : "sold "}${esc(b.outcome)}</span> ${usdShort(b.usd)} @ ${cents(b.price)}</span>
         <time data-ago="${b.ts}">${ago(b.ts)}</time></div>`).join("")
-      : `<div class="win-empty">No bets from followed traders yet.</div>`}</div>
+      : `<div class="win-empty">No bets from top-profit traders yet.</div>`}</div>
     <a class="link-btn" href="${esc(w.url)}" target="_blank" rel="noopener" style="justify-self:start;padding:0">Open on Polymarket ↗</a>
   </article>`;
 }

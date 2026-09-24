@@ -45,7 +45,7 @@ class LiveWindow:
     outcomes: tuple[str, str] = ("Up", "Down")
     tokens: tuple[str, str] = ("", "")
     condition_id: str = ""
-    stances: dict[str, list[float]] = field(default_factory=lambda: defaultdict(lambda: [0.0, 0.0]))
+    stances: dict[str, list[float]] = field(default_factory=lambda: defaultdict(lambda: [0.0, 0.0]))  # $ bought
     bets: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=MAX_BETS))
     seen: set[tuple[Any, ...]] = field(default_factory=set)
     known: bool = False  # the market's tokens are known
@@ -249,8 +249,10 @@ class ShortService:
         if side is None:
             return
         lw.seen.add(trade.dedupe_key)
-        sign = 1 if trade.side == "BUY" else -1
-        lw.stances[trade.wallet][side] += sign * trade.usd
+        if trade.side == "BUY":
+            # Only buys say which side a trader backs, as in the backtest. Near the close, winners sell what they
+            # bought to lock in profit: counting that as a bet on the other side flipped the card.
+            lw.stances[trade.wallet][side] += trade.usd
         self._dirty = True
         row = self.followed.get(trade.wallet)
         if row is None:
