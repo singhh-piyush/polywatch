@@ -31,5 +31,6 @@ def build_watchlist(traders: list[RankedTrader], size: int, overrides: dict[str,
             win_rate=t.stats.win_rate if t and t.stats.n else None,
             median_bet=t.stats.median_bet if t else 0.0,
             pinned=wallet in pins,
+            score=t.score if t and t.rank else None,
         )
     return watched

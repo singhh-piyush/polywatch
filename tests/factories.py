@@ -89,6 +89,7 @@ def trade(ts: int, *, wallet: str = "0xsharp", asset: str = "a1", side: str = "B
 
 
 def watched(wallet: str = "0xsharp", *, name: str = "sharp", rank: int | None = 1,
-            win_rate: float | None = 0.65, median_bet: float = 100.0, pinned: bool = False) -> WatchedTrader:
+            win_rate: float | None = 0.65, median_bet: float = 100.0, pinned: bool = False,
+            score: float | None = None) -> WatchedTrader:
     return WatchedTrader(wallet=wallet, name=name, rank=rank, win_rate=win_rate,
-                         median_bet=median_bet, pinned=pinned)
+                         median_bet=median_bet, pinned=pinned, score=score)

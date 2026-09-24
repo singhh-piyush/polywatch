@@ -137,6 +137,7 @@ class WatchedTrader:
     win_rate: float | None
     median_bet: float
     pinned: bool
+    score: float | None = None  # the scan's composite score, 0-100; None until the trader is ranked
 
 
 @dataclass(slots=True)

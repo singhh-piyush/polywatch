@@ -27,7 +27,9 @@ def test_build_watchlist_uses_override_names_and_stats():
     w = build_watchlist(traders, 1, overrides={"0xpinned": "pin", "0xnew": "pin"}, names={"0xnew": "Newbie"})
     assert list(w) == ["0xa", "0xnew", "0xpinned"]
     assert w["0xa"].rank == 1 and not w["0xa"].pinned and w["0xa"].win_rate == pytest.approx(0.65)
+    assert w["0xa"].score == 100
     assert w["0xpinned"].rank is None and w["0xpinned"].pinned and w["0xpinned"].median_bet == 250.0
+    assert w["0xpinned"].score is None and w["0xnew"].score is None  # not ranked, so no score yet
     assert w["0xpinned"].name == "pinny"
     assert w["0xnew"].name == "Newbie" and w["0xnew"].median_bet == 0.0 and w["0xnew"].win_rate is None
 
