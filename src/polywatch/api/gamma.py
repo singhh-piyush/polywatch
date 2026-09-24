@@ -1,9 +1,21 @@
-"""Polymarket Gamma API: public profiles and profile search."""
+"""Polymarket Gamma API: public profiles, profile search and market timing."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 
+from ..models import MarketTiming
 from .http import GAMMA_API, ApiError, Http
+
+
+def _iso_ts(value: Any) -> int | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return int((dt if dt.tzinfo else dt.replace(tzinfo=UTC)).timestamp())
 
 
 class GammaApi:
@@ -32,3 +44,16 @@ class GammaApi:
             for p in profiles
             if p.get("proxyWallet")
         ]
+
+    async def market_timing(self, slug: str) -> MarketTiming | None:
+        """When a market starts and ends, and whether it has resolved. None if it can't be found or the API fails."""
+        try:
+            for extra in ({}, {"closed": "true"}):  # the default listing leaves out resolved markets
+                rows = await self.http.get_json(GAMMA_API, "/markets", {"slug": slug, **extra})
+                if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+                    market = rows[0]
+                    return MarketTiming(start_ts=_iso_ts(market.get("gameStartTime")),
+                                        end_ts=_iso_ts(market.get("endDate")), closed=bool(market.get("closed")))
+        except ApiError:
+            return None
+        return None
