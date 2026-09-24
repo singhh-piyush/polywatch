@@ -1,8 +1,9 @@
-"""The polywatch terminal app: ranked traders on the left; common trades, buys and sells on the right."""
+"""The polywatch terminal app: ranked traders on the left; common trades, buys, your trades and sells on the right."""
 from __future__ import annotations
 
 import logging
 import time
+from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
@@ -23,18 +24,21 @@ from ..discovery.pipeline import Scanner, ScanProgress
 from ..discovery.watchlist import build_watchlist
 from ..feed.aggregator import Aggregator, is_alert_worthy
 from ..feed.consensus import common_bets
-from ..feed.holdings import holdings_from_positions
+from ..feed.holdings import holdings_from_positions, live_price, my_positions, ordered, totals
 from ..feed.notifier import Notifier
+from ..feed.ranking import copy_score, copy_scores
 from ..feed.sources import FeedService
 from ..feed.timing import MarketTimes
-from ..fmt import ago, alert_text, common_text, exit_alert_text, resolves_text, short_wallet
+from ..fmt import (ago, alert_text, common_text, exit_alert_text, portfolio_text, position_text, resolves_text,
+                   short_wallet)
 from ..markets import market_url, profile_url
-from ..models import FeedItem, Holding, RankedTrader, Trade, TraderStats, Verdict, WatchedTrader
+from ..models import FeedItem, Holding, MyPosition, RankedTrader, Trade, TraderStats, Verdict, WatchedTrader
 from ..store import Store
 from .add import AddTrader
 from .common import CommonList, TextList, TextRow
 from .detail import TraderDetail
 from .feed import FeedList, FeedRow
+from .mine import MyTrades
 from .traders import TradersTable
 
 log = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ STATUS_DOT = {"live": "[green]●[/]", "connecting": "[yellow]●[/]", "reconnec
 # Alerts are for bets you can still act on. Backfills and newly watched traders bring in older ones.
 ALERT_MAX_AGE_S = 180
 COMMON_WINDOW_S = 86_400
+RESCORE_S = 10  # prices move and bets age, so the buys are re-ranked this often
 
 
 class PolywatchApp(App):
@@ -51,10 +56,12 @@ class PolywatchApp(App):
     #panes { height: 1fr; }
     #traders { width: 25%; }
     #right { width: 75%; }
-    #common { height: 33%; border: round $primary; }
+    #common { height: 25%; border: round $primary; }
     #feeds { height: 1fr; }
     #buys { width: 2fr; border: round $success; }
-    #sells { width: 1fr; border: round $error; }
+    #side { width: 1fr; }
+    #mine { height: 1fr; border: round $warning; }
+    #sells { height: 1fr; border: round $error; }
     #scan-progress { display: none; height: 1; }
     #scan-progress.active { display: block; }
     #status { height: 1; padding: 0 1; background: $boost; }
@@ -65,6 +72,7 @@ class PolywatchApp(App):
         Binding("b", "ban", "Ban"),
         Binding("a", "add_trader", "Add"),
         Binding("m", "set_account", "My account"),
+        Binding("s", "toggle_order", "Sort buys"),
         Binding("f", "toggle_flagged", "Flagged"),
         Binding("n", "toggle_alerts", "Alerts"),
         Binding("o", "open", "Open"),
@@ -96,11 +104,15 @@ class PolywatchApp(App):
         self.prices: dict[str, float] = {}
         self.items: dict[str, FeedItem] = {}  # every feed item from the last day, for common trades
         self.holdings: dict[str, Holding] = {}
+        self.positions: list[MyPosition] = []
+        self.best_first = self.store.get_pref("buy_order") != "newest"
         self.my_wallet = self.store.get_pref("my_wallet")
         self.my_name = self.store.get_pref("my_name") or ""
         self.show_flagged = True
         self.stream_status = "offline"
         self._common_dirty = False
+        self._mine_dirty = False
+        self._rescore_due = False
         self._rate_mark = (time.monotonic(), 0)
 
     def compose(self) -> ComposeResult:
@@ -110,8 +122,10 @@ class PolywatchApp(App):
             with Vertical(id="right"):
                 yield CommonList(id="common")
                 with Horizontal(id="feeds"):
-                    yield FeedList("Buys", id="buys")
-                    yield FeedList("Sells", id="sells")
+                    yield FeedList(self._buys_label(), id="buys", by_score=self.best_first)
+                    with Vertical(id="side"):
+                        yield MyTrades(id="mine")
+                        yield FeedList("Sells", id="sells")
         yield ProgressBar(id="scan-progress", show_eta=False)
         yield Static(id="status")
         yield Footer()
@@ -119,17 +133,19 @@ class PolywatchApp(App):
     def on_mount(self) -> None:
         self.query_one(TradersTable).focus()
         self._show_sells_title()
+        self.refresh_mine()
         self.reload_traders()
         self.update_status()
         self.set_interval(1.0, self.tick)
+        self.set_interval(RESCORE_S, self.rescore)
         if not self.autostart:
             return
         self.run_worker(self.feed_service.run_stream(), group="feed", exit_on_error=False)
         self.run_worker(self.feed_service.run_poller(), group="feed", exit_on_error=False)
         self.set_interval(self.cfg.price_refresh_s, self.refresh_prices)
+        self.set_interval(self.cfg.price_refresh_s, self.poll_holdings)
         self.set_interval(60, self.refresh_minute)
-        if self.my_wallet:
-            self.refresh_holdings()
+        self.poll_holdings()
         scan = self.store.latest_scan()
         if scan is None:
             self.action_rescan()
@@ -149,14 +165,17 @@ class PolywatchApp(App):
             feed.tick(now)
         if self._common_dirty:
             self.refresh_common()
+        if self._rescore_due:
+            self.rescore()
+        if self._mine_dirty:
+            self.refresh_mine()
 
     def refresh_minute(self) -> None:
-        """Countdowns, resolved markets and your positions."""
+        """Countdowns and resolved markets."""
         self.redraw_countdowns()
-        for slug in self.times.take_due(item.slug for item in self.items.values()):
+        slugs = [item.slug for item in self.items.values()] + [p.slug for p in self.positions]
+        for slug in self.times.take_due(slugs):
             self.fetch_timing(slug)
-        if self.my_wallet:
-            self.refresh_holdings()
 
     # --- traders ---------------------------------------------------------------------------------
 
@@ -288,6 +307,8 @@ class PolywatchApp(App):
             self.store.set_pref("my_name", name)
             self.my_wallet, self.my_name = wallet, name
             self._show_sells_title()
+            self.positions = []
+            self._mine_dirty = True
             self.set_holdings({})
             self.refresh_holdings()
             self.notify(f"Following sells of what {name or short_wallet(wallet)} holds", markup=False)
@@ -298,6 +319,10 @@ class PolywatchApp(App):
     def _show_sells_title(self) -> None:
         self._sells().set_title("Sells · your holdings" if self.my_wallet else "Sells · all (press m: your account)")
 
+    def poll_holdings(self) -> None:
+        if self.my_wallet:
+            self.refresh_holdings()
+
     @work(exclusive=True, group="holdings", exit_on_error=False)
     async def refresh_holdings(self) -> None:
         if not self.my_wallet:
@@ -307,7 +332,31 @@ class PolywatchApp(App):
         except Exception as exc:
             log.warning("could not load your positions: %s", exc)
             return
+        self.positions = my_positions(rows)
         self.set_holdings(holdings_from_positions(rows))
+        self._mine_dirty = True
+        for slug in self.times.take_due(p.slug for p in self.positions):
+            self.fetch_timing(slug)
+
+    def refresh_mine(self) -> None:
+        """My trades: each position's value and P&L, and what tracked traders did on it today."""
+        self._mine_dirty = False
+        mine = self.query_one(MyTrades)
+        if not self.my_wallet:
+            mine.show([], subtitle="press m: your account")
+            return
+        now = time.time()
+        held = {p.asset for p in self.positions}
+        moves: dict[str, list[FeedItem]] = defaultdict(list)
+        for item in self.items.values():
+            if item.asset in held:
+                moves[item.asset].append(item)
+        rows = [(p, position_text(p, live_price(p, self.prices), self._resolves(p.slug), moves[p.asset], now))
+                for p in ordered(self.positions, self.prices)]
+        value, cost = totals(self.positions, self.prices)
+        redeem = sum(p.redeemable for p in self.positions)
+        subtitle = portfolio_text(len(self.positions) - redeem, redeem, value, cost) if self.positions else None
+        mine.show(rows, subtitle=subtitle)
 
     def set_holdings(self, holdings: dict[str, Holding]) -> None:
         """Show sells of what you now hold, hide sells of what you no longer hold, and retag rows."""
@@ -336,6 +385,24 @@ class PolywatchApp(App):
 
     def _feeds(self) -> tuple[FeedList, FeedList]:
         return self._buys(), self._sells()
+
+    def _buys_label(self) -> str:
+        return "Buys · best first" if self.best_first else "Buys · newest first"
+
+    def action_toggle_order(self) -> None:
+        self.best_first = not self.best_first
+        self.store.set_pref("buy_order", "best" if self.best_first else "newest")
+        buys = self._buys()
+        buys.set_title(self._buys_label())
+        buys.set_order(self.best_first)
+        self.notify("Buys: best to copy first" if self.best_first else "Buys: newest first")
+
+    def rescore(self) -> None:
+        """Re-rank the buys: prices move, bets age, and other traders pile in or take the other side."""
+        self._rescore_due = False
+        buys = self._buys()
+        items = [row.feed_item for row in buys.rows.values()]
+        buys.set_scores(copy_scores(items, self.items.values(), self.watched, self.prices, time.time()))
 
     def _resolves(self, slug: str) -> str:
         return resolves_text(self.times.cached(slug), time.time())
@@ -367,6 +434,8 @@ class PolywatchApp(App):
         if timing is not None and timing.closed:
             return  # resolved: nothing left to copy
         self.items[item.key] = item
+        if item.asset in self.holdings:
+            self._mine_dirty = True  # a tracked trader moved on something you hold
         self._show_item(item, trader)
         for slug in self.times.take_due([item.slug]):
             self.fetch_timing(slug)
@@ -376,15 +445,19 @@ class PolywatchApp(App):
 
     def _show_item(self, item: FeedItem, trader: WatchedTrader) -> None:
         holding = self.holdings.get(item.asset)
+        score = None
         if item.side == "BUY":
             feed = self._buys()
-            self._common_dirty = True
+            self._common_dirty = self._rescore_due = True
+            if item.key not in feed.rows:
+                # Placed by the trader alone for now; the next tick adds who else is in and re-sorts.
+                score = copy_score(item, trader, now=time.time(), price=self.prices.get(item.asset))
         elif self.my_wallet is None or holding is not None:
             feed = self._sells()
         else:
             return  # a sell of something you don't hold
         feed.upsert(item, trader, self.prices.get(item.asset), self.cfg.conviction_multiple,
-                    resolves=self._resolves(item.slug), holding=holding)
+                    resolves=self._resolves(item.slug), holding=holding, score=score)
 
     def _maybe_alert(self, item: FeedItem, trader: WatchedTrader) -> None:
         if item.notified or item.last_ts < time.time() - ALERT_MAX_AGE_S:
@@ -417,6 +490,7 @@ class PolywatchApp(App):
                     row.resolves = text
                     row.redraw()
         self.refresh_common()
+        self.refresh_mine()
 
     @work(group="timing", exit_on_error=False)
     async def fetch_timing(self, slug: str) -> None:
@@ -432,14 +506,14 @@ class PolywatchApp(App):
                 if row.feed_item.slug == slug and row.resolves != text:
                     row.resolves = text
                     row.redraw()
-        self._common_dirty = True
+        self._common_dirty = self._mine_dirty = True
 
     def drop_market(self, slug: str) -> None:
         """A resolved market: its bets can't be copied any more."""
         for feed in self._feeds():
             feed.remove_where(lambda item: item.slug == slug)
         self.items = {key: item for key, item in self.items.items() if item.slug != slug}
-        self._common_dirty = True
+        self._common_dirty = self._mine_dirty = True
 
     @work(group="prices", exit_on_error=False)
     async def fetch_price(self, asset: str) -> None:
@@ -448,19 +522,20 @@ class PolywatchApp(App):
             self.prices[asset] = price
             for feed in self._feeds():
                 feed.refresh_prices(self.prices)
-            self._common_dirty = True
+            self._common_dirty = self._rescore_due = True
 
     @work(exclusive=True, group="price-refresh", exit_on_error=False)
     async def refresh_prices(self) -> None:
         assets = [a for feed in self._feeds() for a in feed.visible_assets()]
         assets += [bet.asset for bet in self.query_one(CommonList).bets()]
+        assets += [p.asset for p in self.positions if not p.redeemable]
         for asset in dict.fromkeys(assets):
             price = await self.clob.midpoint(asset)
             if price is not None:
                 self.prices[asset] = price
         for feed in self._feeds():
             feed.refresh_prices(self.prices)
-        self._common_dirty = True
+        self._common_dirty = self._mine_dirty = self._rescore_due = True
 
     def update_status(self) -> None:
         now, seen = time.monotonic(), self.feed_service.trades_seen

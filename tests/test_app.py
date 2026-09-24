@@ -14,8 +14,9 @@ from polywatch.tui.app import PolywatchApp
 from polywatch.tui.common import CommonList
 from polywatch.tui.detail import TraderDetail
 from polywatch.tui.feed import FeedList
+from polywatch.tui.mine import MyTrades
 from polywatch.tui.traders import TradersTable
-from tests.factories import NOW, stats, trade
+from tests.factories import NOW, position_row, stats, trade
 
 WALLET = "0xabc" + "0" * 36 + "1"
 
@@ -284,3 +285,77 @@ async def test_m_sets_your_account():
         assert str(app.query_one("#status", Static).content).endswith(" · 1 position")
         _, sells = panes(app)
         assert sells.border_title.startswith("Sells · your holdings")
+
+
+async def test_my_trades_sit_above_sells_and_common_trades_is_shorter():
+    app, _ = make_app()
+    async with app.run_test(size=(200, 50)) as pilot:
+        await pilot.pause()
+        buys, sells = panes(app)
+        mine, common = app.query_one(MyTrades), app.query_one(CommonList)
+        assert mine.region.x == sells.region.x and mine.region.y < sells.region.y
+        assert mine.region.x > buys.region.x and common.region.height < buys.region.height / 2
+        assert mine.border_subtitle == "press m: your account"
+
+
+def keys(feed):
+    return [row.feed_item.asset for row in feed.children]
+
+
+async def test_buys_are_ranked_by_copy_score_and_s_switches_to_newest():
+    app, _ = make_app()
+    async with app.run_test() as pilot:
+        now = int(time.time())
+        app.handle_trade(trade(now - 300, wallet="0xbbb", size=400, asset="shared", condition="m1"))
+        app.handle_trade(trade(now - 200, wallet="0xaaa", size=400, asset="shared", condition="m1"))
+        app.handle_trade(trade(now, wallet="0xaaa", size=400, asset="solo", condition="m2"))
+        await pilot.pause()
+        buys, _ = panes(app)
+        app.rescore()
+        await pilot.pause()
+        assert keys(buys) == ["shared", "solo", "shared"]  # alice's bet with bob in beats her newer solo bet
+        assert buys.border_title == "Buys · best first · following"
+        assert all("copy " in row.rendered.plain for row in buys.rows.values())
+        await pilot.press("s")
+        await pilot.pause()
+        assert keys(buys) == ["solo", "shared", "shared"] and app.store.get_pref("buy_order") == "newest"
+        assert buys.border_title == "Buys · newest first · following"
+    again = PolywatchApp(Settings(), store=app.store, http=offline_http(), notifier=FakeNotifier(), autostart=False)
+    assert not again.best_first  # the choice is remembered
+
+
+class FakeData:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def positions(self, wallet):
+        return self.rows
+
+
+async def test_my_trades_show_positions_their_pnl_and_what_tracked_traders_did():
+    app, opened = make_app()
+    async with app.run_test(size=(200, 50)) as pilot:
+        app.my_wallet = "0xme"
+        app.data = FakeData([
+            position_row("held", avg_price=0.31, size=3.2258, cur_price=0.245, redeemable=False, slug="atl"),
+            position_row("won", avg_price=0.4, size=5, cur_price=1.0, redeemable=True, slug="done"),
+            position_row("lost", avg_price=0.5, size=4, cur_price=0.0, redeemable=True),
+        ])
+        app.refresh_holdings()
+        await pilot.pause()
+        assert [p.asset for p in app.positions] == ["held", "won"] and set(app.holdings) == {"held"}
+        app.prices["held"] = 0.5
+        app.handle_trade(trade(int(time.time()) - 120, wallet="0xbbb", size=400, price=0.38, asset="held",
+                               side="SELL", slug="atl"))
+        app.tick()
+        await pilot.pause()
+        mine = app.query_one(MyTrades)
+        assert [p.asset for p in mine.values()] == ["won", "held"]  # redeem first
+        held = mine.children[1].rendered.plain
+        assert "50¢   $1.61  +$0.61 (+61%)" in held and "⚠ bob sold · last @ 38¢ 2m ago" in held
+        assert "✓ redeem $5.00 on Polymarket" in mine.children[0].rendered.plain
+        assert mine.border_subtitle == "1 open · 1 to redeem · $6.61 · +$3.61 (+120%)"
+        mine.focus()
+        mine.index = 1
+        await pilot.press("enter")
+        assert opened == ["https://polymarket.com/event/atl"]

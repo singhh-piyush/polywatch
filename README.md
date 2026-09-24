@@ -25,8 +25,13 @@ follows the top traders' bets live:
 - **Common trades** (top right): outcomes that two or more of your tracked traders bought in the
   last 24 hours, with who, how much, their average price against the price now, and how many
   tracked traders bet the other way.
-- **Buys** and **Sells** (bottom right): each order as it happens. Both panes follow the newest
-  bet; moving through a pane pauses that, and it resumes after 15 seconds or when you press `Home`.
+- **Buys** (bottom middle): each buy as it happens, best to copy first (see below), or newest first
+  if you press `s`.
+- **My trades** and **Sells** (bottom right): your own positions (see [Your account](#your-account)),
+  and tracked traders' sells.
+
+The Buys and Sells panes follow the top row. Moving through a pane pauses that, so nothing moves
+under you; it resumes after 15 seconds or when you press `Home`.
 
 | Key | Action |
 |---|---|
@@ -35,17 +40,18 @@ follows the top traders' bets live:
 | `p` / `b` | pin / ban the selected trader |
 | `a` | add a trader by wallet, profile URL or username |
 | `m` | set your own Polymarket account |
+| `s` | sort buys best-to-copy first or newest first |
 | `f` | show or hide flagged traders |
 | `n` | desktop alerts on/off |
 | `d` | rescan |
-| `Home` | jump back to the newest bet and follow again |
+| `Home` | jump back to the top and follow again |
 | `Tab` | switch pane |
 | `q` | quit |
 
 Feed rows look like this:
 
 ```
-14:03:12  BUY  alice  #1 · 71% win · ★
+14:03:12  BUY  alice  #1 · 71% win · ★   copy 72
           Chelsea vs Brentford — Chelsea   ⏱ in 2h 10m
           @ 58¢ → pays 1.72x   $4,210 🔥3.4x   now 59¢ (+1¢)
           polymarket.com/event/epl-che-bre/epl-che-bre-che
@@ -62,11 +68,31 @@ whether you've missed the move.
 Dimmed rows are buys that aren't worth copying: a price of 95¢ or more (at most a few cents to gain),
 or one side of a trade that bought both outcomes of a market. They never trigger an alert.
 
+`copy 72` is how worth copying a buy is right now, from 0 to 100. Buys are re-ranked every 10 seconds:
+
+- half of it is the trader's score, a quarter is how big the bet is for them (10x their usual size
+  gets it all), and a quarter is how many other tracked traders bought the same outcome in the last
+  day, minus those who bought a different outcome of the market;
+- it halves every 6 hours after the bet;
+- it shrinks as the price moves up from what the trader paid (bought at 50¢, now 60¢: two thirds of
+  the upside is left), and gets a small bonus if the price has dipped;
+- dimmed buys score 0 and sit at the bottom.
+
 ### Your account
 
 Press `m` and enter your Polymarket username, profile URL or wallet. polywatch then reads your
-open positions (public data, refreshed every minute; saved only in the local database) and:
+open positions (public data, refreshed every 30 seconds; saved only in the local database) and:
 
+- lists them under **My trades**, with how each is doing and what tracked traders did on it today:
+
+  ```
+  Highest temperature in Atlanta 68-69°F — Yes   ⏱ ends in 5h
+    3.2 sh  31¢ → 24¢   $0.79  -$0.21 (-21%)
+    ⚠ bob sold · last @ 38¢ 2m ago
+  ```
+
+  Winnings you haven't redeemed yet come first (`✓ redeem $3.23 on Polymarket`), then the rest by
+  value. The pane's title shows your totals;
 - shows only the sells of outcomes you hold, each with a desktop "EXIT" alert, since a tracked
   trader selling is a signal to consider selling too;
 - marks buys of outcomes you already hold with `✓ you hold`.
