@@ -66,3 +66,15 @@ def test_feed_items_upsert_and_parent_dir_creation(tmp_path):
     store.save_feed_item(item)
     assert store.db.execute("SELECT usd, fills FROM feed_events").fetchall() == [(50.0, 2)]
     store.close()
+
+
+def test_prefs_round_trip(tmp_path):
+    store = Store(tmp_path / "db.sqlite")
+    assert store.get_pref("my_wallet") is None
+    store.set_pref("my_wallet", "0xme")
+    store.set_pref("my_wallet", "0xme2")
+    store.close()
+    reopened = Store(tmp_path / "db.sqlite")
+    assert reopened.get_pref("my_wallet") == "0xme2"
+    reopened.set_pref("my_wallet", None)
+    assert reopened.get_pref("my_wallet") is None
