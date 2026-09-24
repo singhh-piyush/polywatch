@@ -187,6 +187,25 @@ class Holding:
 
 
 @dataclass(frozen=True, slots=True)
+class MyPosition:
+    """One of the user's positions as shown in My trades: open, or resolved and waiting to be redeemed."""
+
+    asset: str
+    title: str
+    outcome: str
+    slug: str
+    event_slug: str
+    shares: float
+    avg_price: float
+    cur_price: float  # from the positions data; for a resolved market, what each share pays out
+    redeemable: bool = False
+
+    @property
+    def cost(self) -> float:
+        return self.shares * self.avg_price
+
+
+@dataclass(frozen=True, slots=True)
 class CommonBet:
     """An outcome that two or more tracked traders bought recently."""
 
