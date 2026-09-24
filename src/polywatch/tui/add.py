@@ -32,14 +32,15 @@ class AddTrader(ModalScreen[tuple[str, str] | None]):
     """
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
-    def __init__(self, gamma: Any) -> None:
+    def __init__(self, gamma: Any, prompt: str = "Pin a trader: wallet address, profile URL or username") -> None:
         super().__init__()
         self._gamma = gamma
+        self._prompt = prompt
         self._matches: list[tuple[str, str]] = []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="add"):
-            yield Label("Pin a trader: wallet address, profile URL or username")
+            yield Label(self._prompt)
             yield Input(placeholder="0x…  /  polymarket.com/@name  /  name", id="ref")
             yield OptionList(id="matches")
             yield Static("", id="message")
