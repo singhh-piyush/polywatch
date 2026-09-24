@@ -19,7 +19,8 @@ No API keys are needed. polywatch only reads Polymarket's public data.
 ## Usage
 
 `polywatch` opens the terminal app. The first run scans the leaderboards (a few minutes), then
-follows the top traders' bets live:
+follows the top traders' bets live (`polywatch web` opens the same thing as a website, see
+[The website](#the-website)):
 
 - **Traders** (left quarter): the ranked list. `Enter` shows a trader's full stats.
 - **Common trades** (top right): outcomes that two or more of your tracked traders bought in the
@@ -99,6 +100,65 @@ open positions (public data, refreshed every 30 seconds; saved only in the local
 
 Without an account, the Sells pane shows every sell.
 
+## The website
+
+`polywatch web` runs polywatch as a local website at <http://127.0.0.1:8765> and opens it in your
+browser (`--port` to change the port, `--no-browser` to not open a tab). It shares the database,
+pins, bans and account with the terminal app, and only listens on your own machine.
+
+It has five tabs, each with filters on the left. Filters are kept in the address, so a filtered view
+can be bookmarked.
+
+- **Live bets**: tracked traders' buys (or sells), best to copy first. Filter by category, price,
+  bet size, copy score, when the market settles, how recent the bet is, trader, trader score and
+  win rate, 🔥 bets only, pinned traders only, or markets you hold. The bar on each bet runs from 0¢
+  to 100¢ and marks what the trader paid and the price now. While the pointer is on the list, the
+  order holds still.
+- **Common trades**: outcomes several tracked traders bought, filtered by how many, whether anyone
+  bet the other way, category, settle time and how far the price has moved since.
+- **Traders**: every scanned trader, sortable by any column. Click one for details, to pin or ban
+  them, and for their open positions.
+- **My positions**: your positions at live prices, with totals.
+- **Short markets**: see below.
+
+Everything on the page updates live. Trades arrive from Polymarket's trade stream, prices from its
+order-book stream, and the page gets them pushed; nothing polls from the browser. The top bar shows
+the trades and API requests per second.
+
+Settings (top right) hold your account, adding a trader, rescanning, desktop alerts, and browser
+notifications (the same alerts, from the tab).
+
+## Short markets
+
+The main ranking leaves out 5-minute and 15-minute crypto up-or-down markets. The **Short markets**
+tab covers them, plus the hourly ones, for every coin.
+
+- **History.** polywatch downloads every fill of every finished window and works out each wallet's
+  exact profit in it, counting pairs it minted to sell. The first run goes back 7 days, which takes
+  about half an hour (progress is shown); after that each window is added a minute after it closes.
+  History is kept for 35 days in `~/.local/share/polywatch/short.db`.
+- **Leaderboard**: profit, consistency (how much more often they win than the price they pay,
+  discounted for few windows, as a percentile), win rate, windows traded and volume, over 24 hours,
+  7 days or 30 days. Bot-like traders are kept but badged, and "Hide bots" filters them out:
+
+  | Badge | Meaning |
+  |---|---|
+  | `ARB` | buys Up and Down in similar amounts in 30%+ of windows |
+  | `SNIPE` | half or more of its money goes in at 95¢+ |
+  | `LAST-SEC` | usually still buying in the last 20 seconds |
+  | `HFT` | over 50 fills per window |
+  | `MAKER` | sells pairs it minted in half its windows (shown, not counted as a bot) |
+
+  ☆ stars a trader so their bets always show live; 🔔 sends an alert when they bet.
+- **Live windows**: a card for each open window with a countdown, the price, the money followed
+  traders (the top 25 by 7-day profit, with and without bots, plus starred) put on each side, and
+  their latest bets.
+- **Crowd probability**: the market price, nudged toward the side proven short-market winners are
+  on, weighted by their edge and how big the bet is for them. It is refit every 15 minutes and
+  judged on windows it wasn't fitted on: it only shows when it beat the market price there, and the
+  page says whether that edge was still there 20 seconds later, when you could have copied it.
+  Often it isn't: the fastest traders move the price first.
+
 `polywatch discover [--limit N] [--top N] [--show-excluded]` runs the same scan without the UI
 and prints the ranking (handy for cron or for checking why someone was excluded).
 
@@ -165,7 +225,8 @@ candidate_depths = [["MONTH", 2000], ["WEEK", 250]]
 alerts = false
 ```
 
-Data lives in `~/.local/share/polywatch/polywatch.db` and logs in `~/.local/state/polywatch/polywatch.log`.
+Data lives in `~/.local/share/polywatch/` (`polywatch.db`, and `short.db` for short-market history)
+and logs in `~/.local/state/polywatch/polywatch.log`.
 
 ## Development
 

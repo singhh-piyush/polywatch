@@ -1,7 +1,6 @@
 """Add-trader modal: pin a trader by wallet address, profile URL or username."""
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from rich.text import Text
@@ -13,15 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static
 
 from ..fmt import short_wallet
-
-WALLET_RE = re.compile(r"0x[0-9a-fA-F]{40}")
-
-
-def parse_trader_ref(text: str) -> tuple[str, str]:
-    text = text.strip()
-    if match := WALLET_RE.search(text):
-        return "wallet", match.group(0).lower()
-    return "name", text.rstrip("/").rsplit("/", 1)[-1].lstrip("@")
+from ..markets import parse_trader_ref
 
 
 class AddTrader(ModalScreen[tuple[str, str] | None]):

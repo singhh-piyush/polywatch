@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import logging
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 from rich.console import Console
@@ -86,11 +87,19 @@ def main(argv: list[str] | None = None) -> None:
     d.add_argument("--limit", type=int, default=None, help="only scan the first N leaderboard candidates")
     d.add_argument("--top", type=int, default=50, help="how many ranked traders to print")
     d.add_argument("--show-excluded", action="store_true", help="also list excluded traders and why")
+    w = sub.add_parser("web", help="open the polywatch website (runs locally)")
+    w.add_argument("--port", type=int, default=None, help="port to serve on (default 8765)")
+    w.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
     args = parser.parse_args(argv)
     cfg = load_settings()
     setup_logging(cfg.log_path)
     if args.command == "discover":
         asyncio.run(discover(cfg, limit=args.limit, show_excluded=args.show_excluded, top=args.top))
+        return
+    if args.command == "web":
+        from .web.server import serve
+
+        serve(replace(cfg, web_port=args.port) if args.port else cfg, open_browser=not args.no_browser)
         return
     from .tui.app import PolywatchApp
 

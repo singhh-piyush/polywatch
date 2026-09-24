@@ -53,9 +53,10 @@ class ActivityPoller:
 class FeedService:
     def __init__(self, data: Any, cfg: Settings, *, on_trade: Callable[[Trade], None],
                  on_status: Callable[[str], None], stream: Callable[..., Any] = stream_trades,
-                 clock: Callable[[], float] = time.time) -> None:
+                 clock: Callable[[], float] = time.time, on_any_trade: Callable[[Trade], None] | None = None) -> None:
         self.cfg = cfg
         self.on_trade = on_trade
+        self.on_any_trade = on_any_trade  # every trade on the stream, watched or not (short markets use it)
         self.on_status = on_status
         self.stream = stream
         self.clock = clock
@@ -75,6 +76,11 @@ class FeedService:
     async def run_stream(self) -> None:
         async for trade in self.stream(on_status=self.on_status):
             self.trades_seen += 1
+            if self.on_any_trade is not None:
+                try:
+                    self.on_any_trade(trade)
+                except Exception:
+                    log.exception("stream handler failed for %s", trade)
             # Some websocket fills come without market details; the poller delivers them complete within seconds.
             if trade.wallet in self.watched and trade.slug:
                 self._deliver(trade)

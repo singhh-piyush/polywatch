@@ -20,3 +20,14 @@ def market_url(event_slug: str, slug: str) -> str:
 
 def profile_url(wallet: str) -> str:
     return f"https://polymarket.com/profile/{wallet}"
+
+
+WALLET_RE = re.compile(r"0x[0-9a-fA-F]{40}")
+
+
+def parse_trader_ref(text: str) -> tuple[str, str]:
+    """("wallet", address) or ("name", username) from a wallet, a profile URL or a username."""
+    text = text.strip()
+    if match := WALLET_RE.search(text):
+        return "wallet", match.group(0).lower()
+    return "name", text.rstrip("/").rsplit("/", 1)[-1].lstrip("@")
