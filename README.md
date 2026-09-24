@@ -19,17 +19,26 @@ No API keys are needed. polywatch only reads Polymarket's public data.
 ## Usage
 
 `polywatch` opens the terminal app. The first run scans the leaderboards (a few minutes), then
-keeps a live feed of the top traders' bets.
+follows the top traders' bets live:
+
+- **Traders** (left quarter): the ranked list. `Enter` shows a trader's full stats.
+- **Common trades** (top right): outcomes that two or more of your tracked traders bought in the
+  last 24 hours, with who, how much, their average price against the price now, and how many
+  tracked traders bet the other way.
+- **Buys** and **Sells** (bottom right): each order as it happens. Both panes follow the newest
+  bet; moving through a pane pauses that, and it resumes after 15 seconds or when you press `Home`.
 
 | Key | Action |
 |---|---|
-| `Enter` | trader details (traders pane) / open the market (feed pane) |
+| `Enter` | trader details (traders pane) / open the market (other panes) |
 | `o` | open the trader profile or market in your browser |
 | `p` / `b` | pin / ban the selected trader |
 | `a` | add a trader by wallet, profile URL or username |
+| `m` | set your own Polymarket account |
 | `f` | show or hide flagged traders |
 | `n` | desktop alerts on/off |
 | `d` | rescan |
+| `Home` | jump back to the newest bet and follow again |
 | `Tab` | switch pane |
 | `q` | quit |
 
@@ -37,10 +46,14 @@ Feed rows look like this:
 
 ```
 14:03:12  BUY  alice  #1 · 71% win · ★
-          Chelsea vs Brentford — Chelsea
+          Chelsea vs Brentford — Chelsea   ⏱ in 2h 10m
           @ 58¢ → pays 1.72x   $4,210 🔥3.4x   now 59¢ (+1¢)
           polymarket.com/event/epl-che-bre/epl-che-bre-che
 ```
+
+`⏱` is how long until the market settles. For games it counts down to kick-off (`⏱ in 2h 10m`),
+then shows how long it has been live (`⏱ live 40m`); other markets show their end date
+(`⏱ ends in 3d 4h`). Bets on markets that have resolved drop out.
 
 `@ 58¢` is the trader's average price (also the implied probability). `pays 1.72x` is what a win returns per
 dollar. 🔥 marks a bet at least 3x the trader's usual size. `now` is the current price, so you can see
@@ -48,6 +61,17 @@ whether you've missed the move.
 
 Dimmed rows are buys that aren't worth copying: a price of 95¢ or more (at most a few cents to gain),
 or one side of a trade that bought both outcomes of a market. They never trigger an alert.
+
+### Your account
+
+Press `m` and enter your Polymarket username, profile URL or wallet. polywatch then reads your
+open positions (public data, refreshed every minute; saved only in the local database) and:
+
+- shows only the sells of outcomes you hold, each with a desktop "EXIT" alert, since a tracked
+  trader selling is a signal to consider selling too;
+- marks buys of outcomes you already hold with `✓ you hold`.
+
+Without an account, the Sells pane shows every sell.
 
 `polywatch discover [--limit N] [--top N] [--show-excluded]` runs the same scan without the UI
 and prints the ranking (handy for cron or for checking why someone was excluded).

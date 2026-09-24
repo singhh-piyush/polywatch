@@ -105,3 +105,7 @@ def test_both_sides_of_a_market_are_marked_fast():
     assert a.take_changed() == [yes] and a.take_changed() == []
     later = a.add(trade(NOW + 60 + 601, size=400, asset="yes"))  # well after the other side: a new view
     assert later.fast is None
+
+
+def test_items_carry_the_market_id():
+    assert agg().add(trade(NOW, size=400)).condition_id == "c1"

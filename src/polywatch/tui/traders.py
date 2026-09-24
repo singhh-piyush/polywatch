@@ -11,8 +11,10 @@ from ..discovery.filters import holds_back
 from ..fmt import trader_cells
 from ..models import RankedTrader, TraderStats, Verdict
 
-COLUMNS = (("rank", "#"), ("name", "Trader"), ("score", "Score"), ("win", "Win%"), ("edge", "Edge"),
-           ("roi", "ROI"), ("pnl", "PnL 90d"), ("n", "Bets"), ("flags", "Flags"))
+# A compact table for a quarter of the screen; ROI, PnL and bet count are in the detail view.
+COLUMNS = (("rank", "#"), ("name", "Trader"), ("score", "Score"), ("win", "Win%"), ("edge", "Edge"), ("flags", "Flags"))
+# Positions of each column in trader_cells(), which also feeds the full CLI table.
+CELL_INDEX = {"rank": 0, "name": 1, "score": 2, "win": 3, "edge": 4, "roi": 5, "pnl": 6, "n": 7, "flags": 8}
 
 SORT_KEYS: dict[str, Callable[[RankedTrader], Any]] = {
     "rank": lambda t: (not t.rank, t.rank),
@@ -20,9 +22,6 @@ SORT_KEYS: dict[str, Callable[[RankedTrader], Any]] = {
     "score": lambda t: -t.score,
     "win": lambda t: -t.stats.win_rate,
     "edge": lambda t: -t.stats.edge,
-    "roi": lambda t: -t.stats.roi,
-    "pnl": lambda t: -t.stats.pnl,
-    "n": lambda t: -t.stats.n,
     "flags": lambda t: (len(t.verdict.flags), not t.rank, t.rank),
 }
 
@@ -80,7 +79,7 @@ class TradersTable(DataTable):
             return
         self._ensure_columns()
         cells = trader_cells(t, self._overrides.get(t.stats.wallet))
-        self.add_row(*(Text(cell) for cell in cells), key=t.stats.wallet)
+        self.add_row(*(Text(cells[CELL_INDEX[key]]) for key, _ in COLUMNS), key=t.stats.wallet)
         self._order.append(t.stats.wallet)
 
     def _render_rows(self) -> None:

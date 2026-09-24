@@ -113,3 +113,10 @@ async def test_add_by_name_without_matches_explains():
         await pilot.press("escape")
         await pilot.pause()
     assert host.results == [None]
+
+
+async def test_add_trader_prompt_can_be_changed():
+    screen = AddTrader(FakeGamma([]), prompt="Your Polymarket account")
+    async with ScreenHost(screen).run_test() as pilot:
+        await pilot.pause()
+        assert "Your Polymarket account" in str(screen.query_one("Label").content)

@@ -1,4 +1,4 @@
-"""SQLite persistence: scans, pins/bans and feed history."""
+"""SQLite persistence: scans, pins/bans, feed history and local preferences."""
 from __future__ import annotations
 
 import json
@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS feed_events (
     usd REAL NOT NULL,
     fills INTEGER NOT NULL,
     conviction REAL
+);
+CREATE TABLE IF NOT EXISTS prefs (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 """
 
@@ -142,4 +146,18 @@ class Store:
             (item.key, item.wallet, item.name, item.side, item.asset, item.title, item.outcome, item.slug,
              item.event_slug, item.first_ts, item.last_ts, item.shares, item.usd, item.fills, item.conviction),
         )
+        self.db.commit()
+
+    # --- preferences -----------------------------------------------------------------------------
+
+    def get_pref(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM prefs WHERE key = ?", (key,)).fetchone()
+        return str(row[0]) if row else None
+
+    def set_pref(self, key: str, value: str | None) -> None:
+        if value is None:
+            self.db.execute("DELETE FROM prefs WHERE key = ?", (key,))
+        else:
+            self.db.execute("INSERT INTO prefs (key, value) VALUES (?, ?) "
+                            "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
         self.db.commit()

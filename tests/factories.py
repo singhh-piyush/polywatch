@@ -80,9 +80,9 @@ def stats(**overrides: Any) -> TraderStats:
 
 
 def trade(ts: int, *, wallet: str = "0xsharp", asset: str = "a1", side: str = "BUY", price: float = 0.5,
-          size: float = 100.0, tx: str | None = None, slug: str = "some-market") -> Trade:
+          size: float = 100.0, tx: str | None = None, slug: str = "some-market", condition: str = "c1") -> Trade:
     return Trade(
-        wallet=wallet, side=side, asset=asset, condition_id="c1", price=price, size=size, ts=ts,
+        wallet=wallet, side=side, asset=asset, condition_id=condition, price=price, size=size, ts=ts,
         title="Some market", outcome="Yes", slug=slug, event_slug="some-event",
         tx_hash=tx or f"0x{ts}{asset}{size}", name="sharp",
     )

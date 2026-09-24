@@ -1,12 +1,17 @@
-"""Live feed: one row per order, newest first, updated in place as more fills arrive."""
+"""Live feed panes: one row per order, newest first, following new rows unless you're browsing."""
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from typing import Any
 
+from rich.text import Text
+from textual import events
+from textual.binding import Binding
 from textual.widgets import ListItem, ListView, Static
 
 from ..fmt import feed_text
-from ..models import FeedItem, WatchedTrader
+from ..models import FeedItem, Holding, WatchedTrader
 
 
 class FeedRow(ListItem):
@@ -14,44 +19,111 @@ class FeedRow(ListItem):
     FeedRow { height: auto; padding: 0 1 1 1; }
     """
 
-    def __init__(self, item: FeedItem, trader: WatchedTrader, price: float | None, conviction_multiple: float) -> None:
-        rendered = feed_text(item, trader, price, conviction_multiple)
-        body = Static(rendered)
-        super().__init__(body)
-        self._body = body
+    def __init__(self, item: FeedItem, trader: WatchedTrader, price: float | None, conviction_multiple: float, *,
+                 resolves: str = "", holding: Holding | None = None) -> None:
         self.feed_item = item
         self.trader = trader
         self.price = price
         self.conviction_multiple = conviction_multiple
-        self.rendered = rendered
+        self.resolves = resolves
+        self.holding = holding
+        self.rendered = self._text()
+        self._body = Static(self.rendered)
+        super().__init__(self._body)
+
+    def _text(self) -> Text:
+        return feed_text(self.feed_item, self.trader, self.price, self.conviction_multiple,
+                         resolves=self.resolves, holding=self.holding)
 
     def redraw(self, price: float | None = None) -> None:
         if price is not None:
             self.price = price
-        self.rendered = feed_text(self.feed_item, self.trader, self.price, self.conviction_multiple)
+        self.rendered = self._text()
         self._body.update(self.rendered)
 
 
 class FeedList(ListView):
     MAX_ROWS = 300
+    RESUME_AFTER_S = 15.0
+    BINDINGS = [Binding("home", "follow", "Follow newest", show=False)]
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, title: str = "", **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.rows: dict[str, FeedRow] = {}
+        self.label = title
+        self.following = True
+        self.paused_at: float | None = None
+        self._show_title()
 
-    def upsert(self, item: FeedItem, trader: WatchedTrader, price: float | None, conviction_multiple: float) -> None:
+    # --- following -------------------------------------------------------------------------------
+
+    def set_title(self, title: str) -> None:
+        self.label = title
+        self._show_title()
+
+    def _show_title(self) -> None:
+        if self.label:
+            self.border_title = f"{self.label} · {'following' if self.following else 'paused'}"
+
+    def pause(self, now: float | None = None) -> None:
+        """Stop jumping to new rows while you look around; tick() resumes after RESUME_AFTER_S idle."""
+        self.following = False
+        self.paused_at = time.monotonic() if now is None else now
+        self._show_title()
+
+    def resume(self) -> None:
+        self.following = True
+        self.paused_at = None
+        self._show_title()
+        if self.rows:
+            self.index = 0
+            self.scroll_home(animate=False)
+
+    def tick(self, now: float | None = None) -> None:
+        now = time.monotonic() if now is None else now
+        if not self.following and self.paused_at is not None and now - self.paused_at >= self.RESUME_AFTER_S:
+            self.resume()
+
+    def action_follow(self) -> None:
+        self.resume()
+
+    def action_cursor_up(self) -> None:
+        self.pause()
+        super().action_cursor_up()
+
+    def action_cursor_down(self) -> None:
+        self.pause()
+        super().action_cursor_down()
+
+    def on_mouse_scroll_up(self, _event: events.MouseScrollUp) -> None:
+        self.pause()
+
+    def on_mouse_scroll_down(self, _event: events.MouseScrollDown) -> None:
+        self.pause()
+
+    # --- rows ------------------------------------------------------------------------------------
+
+    def upsert(self, item: FeedItem, trader: WatchedTrader, price: float | None, conviction_multiple: float, *,
+               resolves: str = "", holding: Holding | None = None) -> None:
         row = self.rows.get(item.key)
         if row is not None:
             row.feed_item, row.trader = item, trader
+            row.resolves, row.holding = resolves, holding
             row.redraw(price)
             return
-        row = FeedRow(item, trader, price, conviction_multiple)
+        row = FeedRow(item, trader, price, conviction_multiple, resolves=resolves, holding=holding)
         self.rows[item.key] = row
         newer = sum(1 for c in self.children if isinstance(c, FeedRow) and c.feed_item.first_ts > item.first_ts)
         self.insert(newer, [row])
         self._trim()
         if self.index is None:
             self.call_after_refresh(self._select_first)
+        elif self.following:
+            if newer == 0:
+                self.index = 0
+                self.scroll_home(animate=False)
+        elif newer <= self.index:
+            self.index += 1  # keep the row you're looking at selected
 
     def _select_first(self) -> None:
         if self.index is None and self.children:
@@ -62,6 +134,22 @@ class FeedList(ListView):
             oldest = min(self.rows.values(), key=lambda r: r.feed_item.first_ts)
             del self.rows[oldest.feed_item.key]
             oldest.remove()
+
+    def remove_where(self, doomed: Callable[[FeedItem], bool]) -> int:
+        rows = [row for row in self.rows.values() if doomed(row.feed_item)]
+        for row in rows:
+            del self.rows[row.feed_item.key]
+            row.remove()
+        if rows:
+            self.call_after_refresh(self._fix_index)
+        return len(rows)
+
+    def _fix_index(self) -> None:
+        count = len(self.children)
+        if count == 0:
+            self.index = None
+        elif self.index is None or self.index >= count:
+            self.index = 0 if self.following else count - 1
 
     def selected_item(self) -> FeedItem | None:
         child = self.highlighted_child

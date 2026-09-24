@@ -1,8 +1,9 @@
 import re
 
-from polywatch.fmt import (ago, alert_text, cents, delta_cents, edge_pp, feed_text, payout, pct,
-                           short_url, short_wallet, trader_cells, usd, usd_compact)
-from polywatch.models import FeedItem, RankedTrader, Verdict
+from polywatch.fmt import (ago, alert_text, cents, common_text, delta_cents, duration, edge_pp, exit_alert_text,
+                           feed_text, payout, pct, resolves_text, short_url, short_wallet, trader_cells, usd,
+                           usd_compact)
+from polywatch.models import CommonBet, FeedItem, Holding, MarketTiming, RankedTrader, Verdict
 from tests.factories import stats, watched
 
 
@@ -96,3 +97,63 @@ def test_fast_bets_are_labelled():
     fast.fast = "both sides"
     assert "both sides · not worth copying" in feed_text(fast, watched(), None, 3.0).plain
     assert "not worth copying" not in feed_text(item(), watched(), None, 3.0).plain
+
+
+def test_duration():
+    assert duration(30) == "<1m" and duration(-5) == "<1m"
+    assert duration(45 * 60) == "45m"
+    assert duration(2 * 3600) == "2h" and duration(2 * 3600 + 10 * 60 + 59) == "2h 10m"
+    assert duration(3 * 86400) == "3d" and duration(3 * 86400 + 4 * 3600 + 59 * 60) == "3d 4h"
+
+
+T0 = 1_790_000_000
+
+
+def test_resolves_text_for_sports_markets():
+    game = MarketTiming(start_ts=T0, end_ts=T0 + 7 * 86400)  # end dates on sports markets are loose deadlines
+    assert resolves_text(game, T0 - 2 * 3600 - 600) == "⏱ in 2h 10m"
+    assert resolves_text(game, T0 + 40 * 60) == "⏱ live 40m"
+    assert resolves_text(game, T0 + 12 * 3600) == "⏱ awaiting result"
+
+
+def test_resolves_text_for_other_markets():
+    election = MarketTiming(start_ts=None, end_ts=T0)
+    assert resolves_text(election, T0 - 3 * 86400 - 4 * 3600) == "⏱ ends in 3d 4h"
+    assert resolves_text(election, T0 + 60) == "⏱ awaiting result"
+    assert resolves_text(MarketTiming(start_ts=None, end_ts=None), T0) == ""
+    assert resolves_text(MarketTiming(start_ts=T0, end_ts=T0, closed=True), T0 - 3600) == "⏱ resolved"
+    assert resolves_text(None, T0) == ""
+
+
+def test_feed_text_shows_time_to_resolve_and_your_holding():
+    text = feed_text(item(), watched(), None, 3.0, resolves="⏱ in 2h 10m", holding=Holding(120, 0.58)).plain
+    lines = text.splitlines()
+    assert lines[1].endswith("Chelsea vs Brentford — Chelsea   ⏱ in 2h 10m")
+    assert lines[3].endswith("✓ you hold")
+    sell = feed_text(item(side="SELL", conviction=None), watched(), None, 3.0, holding=Holding(120, 0.58)).plain
+    assert "(exit)   you hold 120 sh @ 58¢" in sell and "✓ you hold" not in sell
+    plain = feed_text(item(), watched(), None, 3.0).plain
+    assert "⏱" not in plain and "you hold" not in plain
+
+
+def bet(**kw):
+    base = dict(asset="a", condition_id="c", title="Chelsea vs Brentford", outcome="Chelsea", slug="s",
+                event_slug="e", wallets=("0x1", "0x2", "0x3"), names=("alice", "bob", "carol"), usd=12_400.0,
+                shares=12_400.0 / 0.57, last_ts=T0, against=1)
+    base.update(kw)
+    return CommonBet(**base)
+
+
+def test_common_text():
+    text = common_text(bet(), 0.59, "⏱ in 2h").plain
+    assert text == ("3 traders · Chelsea vs Brentford — Chelsea   ⏱ in 2h\n"
+                    "  alice, bob, carol · $12k · avg 57¢ · now 59¢ (+2¢) · 1 against")
+    many = bet(wallets=tuple(f"0x{i}" for i in range(6)), names=tuple("abcdef"), against=0)
+    assert common_text(many, None, "").plain.splitlines()[1] == "  a, b, c, d +2 · $12k · avg 57¢"
+
+
+def test_exit_alert_text():
+    title, body = exit_alert_text(item(side="SELL", conviction=None, usd=710.0, shares=1000.0), watched(),
+                                  Holding(120, 0.58))
+    assert title == "EXIT: sharp sold Chelsea @ 71¢"
+    assert body == "Chelsea vs Brentford\nYou hold 120 sh @ 58¢"
