@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 
 from rich.text import Text
 
 from .markets import market_url
-from .models import CommonBet, FeedItem, Holding, MarketTiming, RankedTrader, WatchedTrader
+from .models import CommonBet, FeedItem, Holding, MarketTiming, MyPosition, RankedTrader, WatchedTrader
 
 INDENT = " " * 10
 
@@ -28,6 +29,20 @@ def delta_cents(entry: float, now: float) -> str:
 
 def usd(amount: float) -> str:
     return f"-${abs(amount):,.0f}" if amount < 0 else f"${amount:,.0f}"
+
+
+def usd_cents(amount: float) -> str:
+    return f"-${abs(amount):,.2f}" if round(amount, 2) < 0 else f"${abs(amount):,.2f}"
+
+
+def signed_usd(amount: float) -> str:
+    return f"{'-' if round(amount, 2) < 0 else '+'}${abs(amount):,.2f}"
+
+
+def pnl_text(value: float, cost: float) -> str:
+    """Profit or loss in dollars and percent of cost, e.g. "-$0.21 (-21%)"."""
+    pnl = value - cost
+    return f"{signed_usd(pnl)} ({pnl / cost * 100:+.0f}%)" if cost > 0 else signed_usd(pnl)
 
 
 def usd_compact(amount: float) -> str:
@@ -106,8 +121,12 @@ def short_url(url: str, width: int = 60) -> str:
     return bare if len(bare) <= width else bare[: width - 1] + "…"
 
 
+def copy_style(score: int) -> str:
+    return "bold green" if score >= 60 else "yellow" if score >= 30 else "dim"
+
+
 def feed_text(item: FeedItem, trader: WatchedTrader, now_price: float | None, conviction_multiple: float, *,
-              resolves: str = "", holding: Holding | None = None) -> Text:
+              resolves: str = "", holding: Holding | None = None, copy_score: int | None = None) -> Text:
     text = Text()
     text.append(time.strftime("%H:%M:%S", time.localtime(item.last_ts)), style="dim")
     text.append("  ")
@@ -123,6 +142,8 @@ def feed_text(item: FeedItem, trader: WatchedTrader, now_price: float | None, co
         meta.append("★")
     if meta:
         text.append("  " + " · ".join(meta), style="dim")
+    if copy_score is not None:
+        text.append(f"   copy {copy_score}", style=copy_style(copy_score))
     text.append(f"\n{INDENT}{item.title} — {item.outcome}")
     if resolves:
         text.append(f"   {resolves}", style="cyan")
@@ -187,3 +208,42 @@ def common_text(bet: CommonBet, now_price: float | None, resolves: str) -> Text:
 def exit_alert_text(item: FeedItem, trader: WatchedTrader, holding: Holding) -> tuple[str, str]:
     title = f"EXIT: {trader.name} sold {item.outcome} @ {cents(item.avg_price)}"
     return title, f"{item.title}\nYou hold {holding.shares:,.0f} sh @ {cents(holding.avg_price)}"
+
+
+def _moves_line(mark: str, verb: str, moves: Sequence[FeedItem], now: float) -> str:
+    names = list(dict.fromkeys(m.name or short_wallet(m.wallet) for m in moves))
+    shown = ", ".join(names[:3]) + (f" +{len(names) - 3}" if len(names) > 3 else "")
+    last = moves[0]
+    return f"{mark} {shown} {verb} · last @ {cents(last.avg_price)} {ago(now - last.last_ts)} ago"
+
+
+def position_text(pos: MyPosition, price: float, resolves: str, moves: Sequence[FeedItem], now: float) -> Text:
+    """A row of My trades. `moves` are tracked traders' feed items on this outcome, in any order."""
+    text = Text()
+    text.append(f"{pos.title} — {pos.outcome}", style="bold")
+    if resolves:
+        text.append(f"   {resolves}", style="cyan")
+    value = pos.shares * price
+    text.append(f"\n  {pos.shares:,.1f} sh  {cents(pos.avg_price)} → ")
+    if pos.redeemable:
+        text.append("resolved   ")
+        text.append(f"✓ redeem {usd_cents(value)} on Polymarket", style="bold green")
+    else:
+        style = "green" if round(value - pos.cost, 2) >= 0 else "red"
+        text.append(f"{cents(price)}   {usd_cents(value)}  {pnl_text(value, pos.cost)}", style=style)
+    recent = sorted(moves, key=lambda m: m.last_ts, reverse=True)
+    sells = [m for m in recent if m.side == "SELL"]
+    buys = [m for m in recent if m.side == "BUY" and not m.fast]
+    if sells:
+        text.append("\n  " + _moves_line("⚠", "sold", sells, now), style="bold red")
+    if buys:
+        text.append("\n  " + _moves_line("✓", "bought", buys, now), style="green")
+    return text
+
+
+def portfolio_text(n_open: int, n_redeem: int, value: float, cost: float) -> str:
+    """The My trades subtitle, e.g. "4 open · $3.00 · -$0.24 (-7%)"."""
+    parts = [f"{n_open} open"]
+    if n_redeem:
+        parts.append(f"{n_redeem} to redeem")
+    return " · ".join([*parts, usd_cents(value), pnl_text(value, cost)])

@@ -1,9 +1,9 @@
 import re
 
 from polywatch.fmt import (ago, alert_text, cents, common_text, delta_cents, duration, edge_pp, exit_alert_text,
-                           feed_text, payout, pct, resolves_text, short_url, short_wallet, trader_cells, usd,
-                           usd_compact)
-from polywatch.models import CommonBet, FeedItem, Holding, MarketTiming, RankedTrader, Verdict
+                           feed_text, payout, pct, pnl_text, portfolio_text, position_text, resolves_text, short_url,
+                           short_wallet, signed_usd, trader_cells, usd, usd_cents, usd_compact)
+from polywatch.models import CommonBet, FeedItem, Holding, MarketTiming, MyPosition, RankedTrader, Verdict
 from tests.factories import stats, watched
 
 
@@ -157,3 +157,57 @@ def test_exit_alert_text():
                                   Holding(120, 0.58))
     assert title == "EXIT: sharp sold Chelsea @ 71¢"
     assert body == "Chelsea vs Brentford\nYou hold 120 sh @ 58¢"
+
+
+def test_feed_text_shows_the_copy_score():
+    first = feed_text(item(), watched(), None, 3.0, copy_score=82).plain.splitlines()[0]
+    assert first.endswith("   copy 82")
+    assert "copy" not in feed_text(item(), watched(), None, 3.0).plain
+
+
+def test_small_money():
+    assert usd_cents(0.79) == "$0.79" and usd_cents(-0.211) == "-$0.21" and usd_cents(1234.5) == "$1,234.50"
+    assert usd_cents(-0.001) == "$0.00"
+    assert signed_usd(0.12) == "+$0.12" and signed_usd(-0.21) == "-$0.21" and signed_usd(-0.004) == "+$0.00"
+    assert pnl_text(0.79, 1.0) == "-$0.21 (-21%)" and pnl_text(1.5, 1.0) == "+$0.50 (+50%)"
+    assert pnl_text(0.5, 0.0) == "+$0.50"
+
+
+def position(**kw):
+    base = dict(asset="a1", title="Highest temperature in Atlanta 68-69°F", outcome="Yes", slug="atl",
+                event_slug="atl-event", shares=3.2258, avg_price=0.31, cur_price=0.245)
+    base.update(kw)
+    return MyPosition(**base)
+
+
+def test_position_text_for_an_open_position():
+    text = position_text(position(), 0.245, "⏱ ends in 5h", [], T0)
+    assert text.plain == ("Highest temperature in Atlanta 68-69°F — Yes   ⏱ ends in 5h\n"
+                          "  3.2 sh  31¢ → 24¢   $0.79  -$0.21 (-21%)")
+    assert any(span.style == "red" for span in text.spans)
+    up = position_text(position(), 0.5, "", [], T0)
+    assert up.plain.endswith("50¢   $1.61  +$0.61 (+61%)") and any(span.style == "green" for span in up.spans)
+
+
+def test_position_text_for_a_resolved_position():
+    text = position_text(position(cur_price=1.0, redeemable=True), 1.0, "⏱ resolved", [], T0)
+    assert text.plain.splitlines()[1] == "  3.2 sh  31¢ → resolved   ✓ redeem $3.23 on Polymarket"
+
+
+def test_position_text_shows_what_tracked_traders_did():
+    moves = [
+        item(name="bob", side="SELL", conviction=None, usd=38.0, shares=100.0, last_ts=T0 - 120),
+        item(name="carol", side="SELL", conviction=None, usd=40.0, shares=100.0, last_ts=T0 - 600),
+        item(name="bob", side="SELL", conviction=None, usd=41.0, shares=100.0, last_ts=T0 - 900),
+        item(name="alice", usd=30.0, shares=100.0, last_ts=T0 - 720),
+        item(name="dave", usd=97.0, shares=100.0, last_ts=T0 - 60, fast="95¢+"),
+    ]
+    lines = position_text(position(), 0.245, "", moves, T0).plain.splitlines()
+    assert lines[2:] == ["  ⚠ bob, carol sold · last @ 38¢ 2m ago", "  ✓ alice bought · last @ 30¢ 12m ago"]
+    many = [item(name=n, side="SELL", conviction=None, last_ts=T0 - i) for i, n in enumerate("abcde")]
+    assert position_text(position(), 0.245, "", many, T0).plain.splitlines()[2].startswith("  ⚠ a, b, c +2 sold")
+
+
+def test_portfolio_text():
+    assert portfolio_text(4, 0, 3.0, 3.24) == "4 open · $3.00 · -$0.24 (-7%)"
+    assert portfolio_text(1, 1, 5.0, 4.0) == "1 open · 1 to redeem · $5.00 · +$1.00 (+25%)"
