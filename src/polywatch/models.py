@@ -154,6 +154,7 @@ class FeedItem:
     event_slug: str
     first_ts: int
     last_ts: int
+    condition_id: str = ""  # the market; its outcomes are separate assets
     shares: float = 0.0
     usd: float = 0.0
     fills: int = 0
@@ -161,6 +162,45 @@ class FeedItem:
     fast: str | None = None  # why copying this buy gains nothing, e.g. "95¢+" or "both sides"
     tx_hashes: list[str] = field(default_factory=list)
     notified: bool = False
+
+    @property
+    def avg_price(self) -> float:
+        return self.usd / self.shares if self.shares else 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class MarketTiming:
+    """When a market settles. Sports markets have a game start; the end date on those is a loose deadline."""
+
+    start_ts: int | None
+    end_ts: int | None
+    closed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Holding:
+    """One of the user's own open positions."""
+
+    shares: float
+    avg_price: float
+
+
+@dataclass(frozen=True, slots=True)
+class CommonBet:
+    """An outcome that two or more tracked traders bought recently."""
+
+    asset: str
+    condition_id: str
+    title: str
+    outcome: str
+    slug: str
+    event_slug: str
+    wallets: tuple[str, ...]
+    names: tuple[str, ...]
+    usd: float
+    shares: float
+    last_ts: int
+    against: int = 0  # tracked traders who bought another outcome of the same market
 
     @property
     def avg_price(self) -> float:

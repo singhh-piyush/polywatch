@@ -91,7 +91,7 @@ class Aggregator:
             key=f"{trade.wallet}:{trade.asset}:{trade.side}:{trade.ts}",
             wallet=trade.wallet, name=trader.name, side=trade.side, asset=trade.asset, title=trade.title,
             outcome=trade.outcome, slug=trade.slug, event_slug=trade.event_slug,
-            first_ts=trade.ts, last_ts=trade.ts,
+            first_ts=trade.ts, last_ts=trade.ts, condition_id=trade.condition_id,
         )
         group.append(item)
         if len(group) > MAX_ITEMS_PER_GROUP:

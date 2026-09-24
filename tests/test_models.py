@@ -1,4 +1,4 @@
-from polywatch.models import FeedItem, Trade, Verdict
+from polywatch.models import CommonBet, FeedItem, Trade, Verdict
 from tests.factories import load_fixture
 
 
@@ -53,3 +53,10 @@ def test_feed_item_avg_price():
     item = FeedItem(key="k", wallet="w", name="n", side="BUY", asset="a", title="t", outcome="o",
                     slug="s", event_slug="e", first_ts=1, last_ts=1, shares=200, usd=116)
     assert item.avg_price == 0.58
+
+
+
+def test_common_bet_avg_price():
+    bet = CommonBet(asset="a", condition_id="c", title="t", outcome="Yes", slug="s", event_slug="e",
+                    wallets=("0xa", "0xb"), names=("alice", "bob"), usd=116.0, shares=200.0, last_ts=1)
+    assert bet.avg_price == 0.58 and bet.against == 0
