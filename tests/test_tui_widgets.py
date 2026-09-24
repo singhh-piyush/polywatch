@@ -25,10 +25,10 @@ def traders():
     ]
 
 
-def fitem(key, first_ts, *, usd=116.0, asset="a1"):
+def fitem(key, first_ts, *, usd=116.0, asset="a1", fast=None):
     return FeedItem(key=key, wallet="0xa", name="alice", side="BUY", asset=asset, title="Some market",
                     outcome="Yes", slug="some-market", event_slug="some-event", first_ts=first_ts,
-                    last_ts=first_ts, shares=200, usd=usd)
+                    last_ts=first_ts, shares=200, usd=usd, fast=fast)
 
 
 async def test_traders_table_shows_rank_order_and_markers():
@@ -159,6 +159,74 @@ async def test_feed_rows_show_time_to_resolve_and_holdings():
         row.resolves, row.holding = "⏱ live 5m", None
         row.redraw()
         assert "⏱ live 5m" in row.rendered.plain and "you hold" not in row.rendered.plain
+
+
+def keys(feed):
+    return [row.feed_item.key for row in feed.children]
+
+
+def highlighted(feed):
+    return [row.feed_item.key for row in feed.children if row.highlighted]
+
+
+async def test_the_highlight_moves_with_a_new_top_row():
+    feed = FeedList()
+    async with Host(feed).run_test() as pilot:
+        feed.upsert(fitem("k1", 100), watched("0xa"), None, 3.0)
+        await pilot.pause()
+        feed.upsert(fitem("k2", 200), watched("0xa"), None, 3.0)
+        await pilot.pause()
+        assert keys(feed) == ["k2", "k1"] and highlighted(feed) == ["k2"]
+
+
+async def test_best_first_places_rows_by_copy_score():
+    feed = FeedList(title="Buys", by_score=True)
+    async with Host(feed).run_test() as pilot:
+        for key, ts, score, fast in (("k1", 100, 40, None), ("k2", 200, 80, None), ("k3", 300, 10, None),
+                                     ("k4", 400, 50, "95¢+"), ("k5", 500, 40, None)):
+            feed.upsert(fitem(key, ts, fast=fast), watched("0xa"), None, 3.0, score=score)
+        await pilot.pause()
+        assert keys(feed) == ["k2", "k5", "k1", "k3", "k4"]  # dimmed last; equal scores newest first
+        assert feed.selected_item().key == "k2" and highlighted(feed) == ["k2"]
+        assert feed.rows["k2"].rendered.plain.splitlines()[0].endswith("copy 80")
+
+
+async def test_new_scores_reorder_while_following_but_not_while_browsing():
+    feed = FeedList(title="Buys", by_score=True)
+    async with Host(feed).run_test() as pilot:
+        for key, ts, score in (("k1", 100, 40), ("k2", 200, 80), ("k3", 300, 10)):
+            feed.upsert(fitem(key, ts), watched("0xa"), None, 3.0, score=score)
+        await pilot.pause()
+        feed.set_scores({"k3": 95})
+        await pilot.pause()
+        assert keys(feed) == ["k3", "k2", "k1"] and feed.selected_item().key == "k3" and highlighted(feed) == ["k3"]
+        assert "copy 95" in feed.rows["k3"].rendered.plain
+        feed.focus()
+        await pilot.press("down")
+        feed.set_scores({"k1": 99})
+        await pilot.pause()
+        assert keys(feed) == ["k3", "k2", "k1"] and feed.selected_item().key == "k2"  # browsing: nothing moves
+        assert "copy 99" in feed.rows["k1"].rendered.plain
+        await pilot.press("home")
+        await pilot.pause()
+        assert keys(feed) == ["k1", "k3", "k2"] and feed.selected_item().key == "k1" and highlighted(feed) == ["k1"]
+
+
+async def test_switching_between_best_and_newest_first():
+    feed = FeedList(title="Buys", by_score=True)
+    async with Host(feed).run_test() as pilot:
+        for key, ts, score in (("k1", 100, 40), ("k2", 200, 80), ("k3", 300, 10)):
+            feed.upsert(fitem(key, ts), watched("0xa"), None, 3.0, score=score)
+        await pilot.pause()
+        feed.set_order(False)
+        await pilot.pause()
+        assert keys(feed) == ["k3", "k2", "k1"] and feed.selected_item().key == "k3"
+        feed.upsert(fitem("k4", 50), watched("0xa"), None, 3.0, score=99)
+        await pilot.pause()
+        assert keys(feed)[-1] == "k4"
+        feed.set_order(True)
+        await pilot.pause()
+        assert keys(feed) == ["k4", "k2", "k1", "k3"] and highlighted(feed) == ["k4"]
 
 
 async def test_remove_where():

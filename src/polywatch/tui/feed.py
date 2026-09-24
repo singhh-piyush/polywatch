@@ -1,4 +1,4 @@
-"""Live feed panes: one row per order, newest first, following new rows unless you're browsing."""
+"""Live feed panes: one row per order, best to copy or newest first, following the top unless you're browsing."""
 from __future__ import annotations
 
 import time
@@ -20,20 +20,21 @@ class FeedRow(ListItem):
     """
 
     def __init__(self, item: FeedItem, trader: WatchedTrader, price: float | None, conviction_multiple: float, *,
-                 resolves: str = "", holding: Holding | None = None) -> None:
+                 resolves: str = "", holding: Holding | None = None, copy_score: int | None = None) -> None:
         self.feed_item = item
         self.trader = trader
         self.price = price
         self.conviction_multiple = conviction_multiple
         self.resolves = resolves
         self.holding = holding
+        self.copy_score = copy_score
         self.rendered = self._text()
         self._body = Static(self.rendered)
         super().__init__(self._body)
 
     def _text(self) -> Text:
         return feed_text(self.feed_item, self.trader, self.price, self.conviction_multiple,
-                         resolves=self.resolves, holding=self.holding)
+                         resolves=self.resolves, holding=self.holding, copy_score=self.copy_score)
 
     def redraw(self, price: float | None = None) -> None:
         if price is not None:
@@ -47,9 +48,10 @@ class FeedList(ListView):
     RESUME_AFTER_S = 15.0
     BINDINGS = [Binding("home", "follow", "Follow newest", show=False)]
 
-    def __init__(self, title: str = "", **kwargs: Any) -> None:
+    def __init__(self, title: str = "", *, by_score: bool = False, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.rows: dict[str, FeedRow] = {}
+        self.by_score = by_score  # best to copy first; otherwise newest first
         self.label = title
         self.following = True
         self.paused_at: float | None = None
@@ -75,9 +77,7 @@ class FeedList(ListView):
         self.following = True
         self.paused_at = None
         self._show_title()
-        if self.rows:
-            self.index = 0
-            self.scroll_home(animate=False)
+        self.resort()
 
     def tick(self, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
@@ -101,29 +101,72 @@ class FeedList(ListView):
     def on_mouse_scroll_down(self, _event: events.MouseScrollDown) -> None:
         self.pause()
 
+    # --- order -----------------------------------------------------------------------------------
+
+    def set_order(self, by_score: bool) -> None:
+        self.by_score = by_score
+        self.resume()
+
+    def _sort_key(self, row: FeedRow) -> tuple[Any, ...]:
+        item = row.feed_item
+        if self.by_score:
+            return (item.fast is not None, -(row.copy_score or 0), -item.first_ts)
+        return (-item.first_ts,)
+
+    def set_scores(self, scores: dict[str, int]) -> None:
+        for key, score in scores.items():
+            row = self.rows.get(key)
+            if row is not None and row.copy_score != score:
+                row.copy_score = score
+                row.redraw()
+        self.resort()
+
+    def resort(self) -> None:
+        """Put the rows in order and select the top. Only while following, so rows never move under you."""
+        if not self.following:
+            return
+        rows = [c for c in self.children if isinstance(c, FeedRow)]
+        for i, row in enumerate(sorted(rows, key=self._sort_key)):
+            if self._nodes[i] is not row:
+                self.move_child(row, before=i)
+        if rows:
+            self.index = 0
+            self.scroll_home(animate=False)
+        self._sync_highlight()
+
+    def _sync_highlight(self) -> None:
+        # ListView only moves the highlight when the index changes, not when rows move around it.
+        for i, child in enumerate(self._nodes):
+            if isinstance(child, ListItem):
+                child.highlighted = i == self.index
+
     # --- rows ------------------------------------------------------------------------------------
 
     def upsert(self, item: FeedItem, trader: WatchedTrader, price: float | None, conviction_multiple: float, *,
-               resolves: str = "", holding: Holding | None = None) -> None:
+               resolves: str = "", holding: Holding | None = None, score: int | None = None) -> None:
         row = self.rows.get(item.key)
         if row is not None:
             row.feed_item, row.trader = item, trader
             row.resolves, row.holding = resolves, holding
+            if score is not None:
+                row.copy_score = score
             row.redraw(price)
             return
-        row = FeedRow(item, trader, price, conviction_multiple, resolves=resolves, holding=holding)
+        row = FeedRow(item, trader, price, conviction_multiple, resolves=resolves, holding=holding, copy_score=score)
         self.rows[item.key] = row
-        newer = sum(1 for c in self.children if isinstance(c, FeedRow) and c.feed_item.first_ts > item.first_ts)
-        self.insert(newer, [row])
+        key = self._sort_key(row)
+        above = sum(1 for c in self.children if isinstance(c, FeedRow) and self._sort_key(c) < key)
+        self.insert(above, [row])
         self._trim()
         if self.index is None:
             self.call_after_refresh(self._select_first)
         elif self.following:
-            if newer == 0:
+            if above == 0:
                 self.index = 0
                 self.scroll_home(animate=False)
-        elif newer <= self.index:
+        elif above <= self.index:
             self.index += 1  # keep the row you're looking at selected
+        self._sync_highlight()
 
     def _select_first(self) -> None:
         if self.index is None and self.children:
@@ -150,6 +193,7 @@ class FeedList(ListView):
             self.index = None
         elif self.index is None or self.index >= count:
             self.index = 0 if self.following else count - 1
+        self._sync_highlight()
 
     def selected_item(self) -> FeedItem | None:
         child = self.highlighted_child
